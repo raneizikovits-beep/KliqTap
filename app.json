@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "allkind",
+    "slug": "snack-29aaf543-bc98-4e51-9561-dea50aff00a7",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.anonymous.snack29aaf543bc984e519561dea50aff00a7"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
