@@ -1,0 +1,78 @@
+# AllKind/.github/workflows/main.yml (FINAL CI/CD PIPELINE)
+
+name: AllKind CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # Job 1: Build and Test the NestJS Server
+  build-and-test-server:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./server # Run all commands inside the server folder
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: Install Dependencies
+      run: npm install
+      
+    # ⭐️ NEW: Run Prisma Generate before build to ensure up-to-date types ⭐️
+    # This fixes build errors related to missing Prisma types
+    - name: Run Prisma Generate
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL_DUMMY }} # Needs a dummy value for generate
+      run: npx prisma generate
+
+    - name: Run Build
+      run: npm run build
+
+  # Job 2: Build and Push Docker Image (Optional - for deployment)
+  build-and-push-docker:
+    needs: build-and-test-server # Run only if tests pass
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' # Only run for pushes to main
+
+    defaults:
+      run:
+        working-directory: ./server
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # ⭐️ NEW: Required for the Dockerfile to find schema.prisma ⭐️
+    - name: Copy Prisma Schema into Build Context
+      run: cp -r prisma ./
+
+    - name: Log in to Amazon ECR (Example)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Build, tag, and push image to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v2
+      id: login-ecr
+
+    - name: Build and push Docker image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: kliqtap-api
+        IMAGE_TAG: ${{ github.sha }} # Use commit hash for specific tagging
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG

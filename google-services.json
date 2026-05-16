@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "529539284198",
+    "project_id": "kliqtap-963d5",
+    "storage_bucket": "kliqtap-963d5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:529539284198:android:fe2101c14c580e6d0bcf27",
+        "android_client_info": {
+          "package_name": "com.kliq.tap"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGhSFOMlkVvAhmeCug7U7a4vBXFgu8OvI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
