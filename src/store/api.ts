@@ -4,9 +4,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-export const API_BASE_URL = __DEV__ 
-  ? 'http://192.168.1.60:3000' 
-  : 'https://api.kliqtap.com'; 
+export const API_BASE_URL = (process.env as any).EXPO_PUBLIC_API_URL || 'https://api.kliqtap.com';
 
 const ACCESS_TOKEN_KEY = 'auth_access_token';
 const REFRESH_TOKEN_KEY = 'auth_refresh_token';
