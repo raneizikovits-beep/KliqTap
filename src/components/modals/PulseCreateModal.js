@@ -312,7 +312,7 @@ const handleSubmit = async () => {
                               <ActivityIndicator color="#fff" size="small" />
                           ) : (
                               <Text style={styles.postBtnText}>
-                                  {postType === 'magic' ? "Magic ✨" : postType === 'feed' ? "To Feed" : "To Pulse"}
+                                  {postType === 'magic' ? "Magic ✨" : postType === 'feed' ? "Drop it 📝" : "Drop it ⚡"}
                               </Text>
                           )}
                       </TouchableOpacity>

@@ -1,5 +1,5 @@
 // client/src/store/api.ts
-// ⭐️ KliqMind V4.2 PRODUCTION: Robust Web/Native FormData Handling + Context Injection ⭐️
+// ⭐️ KliqMind V4.3 PRODUCTION: Secure Anti-Loop Token Refresh & Concurrency Fix ⭐️
 
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
@@ -54,8 +54,8 @@ const saveTokensToStorage = async (access: string | null, refresh?: string | nul
             if (access !== null) window.localStorage.setItem(ACCESS_TOKEN_KEY, access);
             if (refresh) window.localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
         } else {
-            if (access !== null) await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, access);
-            if (refresh) await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refresh);
+            if (access !== null) await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, typeof access === 'string' ? access : JSON.stringify(access));
+            if (refresh) await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, typeof refresh === 'string' ? refresh : JSON.stringify(refresh));
         }
     } catch (e) {
         if (__DEV__) console.error('[API Storage] Failed to save tokens:', e);
@@ -144,6 +144,8 @@ const attemptTokenRefresh = async (): Promise<string> => {
         });
 
         if (!response.ok) {
+            // ⭐️ קטיעת לולאה: מנקים טוקנים סינכרונית מייד כשנכשל ה-Refresh ⭐️
+            clearLocalTokens();
             if (onAuthFailureCallback) onAuthFailureCallback();
             throw new APIError('Session expired.', response.status);
         }
@@ -165,7 +167,6 @@ const buildHeaders = (
 ): Headers => {
     const headers = new Headers(optionsHeaders);
 
-    // ⭐️ KLIQMIND FIX: זיהוי עמיד של FormData שפותר את קריסת ההעלאות בווב ⭐️
     const isFormData = body && typeof body === 'object' && (
         body instanceof FormData || 
         body.constructor?.name === 'FormData' || 
@@ -174,21 +175,18 @@ const buildHeaders = (
 
     if (!isFormData && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
-    } else if (isFormData) {
-        // מוחק את ה-Header כדי שהדפדפן יחשב את ה-boundary בעצמו
-        headers.delete('Content-Type');
-    } 
+    }
 
-    headers.set('x-user-timezone', getDeviceContext());
-    headers.set('x-user-location', 'Cebu City');
+    headers.set('X-Device-Timezone', getDeviceContext());
 
-    if (currentAccessToken && !skipAuth) {
+    if (!skipAuth && currentAccessToken) {
         headers.set('Authorization', `Bearer ${currentAccessToken}`);
     }
+
     return headers;
 }; 
 
-// --- 5. Core Fetch Function ------------------------------------------------
+// --- 5. Main Fetch Wrapper -------------------------------------------------
 
 export async function fetchAPI<T = any>(
     endpoint: string,
@@ -200,8 +198,6 @@ export async function fetchAPI<T = any>(
 
     let normalizedBody: BodyInit | null | undefined = undefined;
     if (options.body !== undefined && options.body !== null) {
-        
-        // ⭐️ KLIQMIND FIX: הגנה מפני JSON.stringify לקבצי מדיה בווב ⭐️
         const isFormData = options.body && typeof options.body === 'object' && (
             options.body instanceof FormData || 
             options.body.constructor?.name === 'FormData' || 
@@ -242,6 +238,7 @@ export async function fetchAPI<T = any>(
             }
 
             if (isRefreshing) {
+                // המתנה לרענון הנוכחי שמבוצע על ידי הבקשה הראשונה
                 await subscribeTokenRefresh(() => {});
                 return fetchAPI<T>(endpoint, options);
             }
@@ -250,8 +247,17 @@ export async function fetchAPI<T = any>(
             try {
                 await attemptTokenRefresh();
                 processQueue(currentAccessToken);
-                response = await executeFetch();
+                response = await executeFetch(); // קריאה חוזרת עם הטוקן החדש
+                
+                // ⭐️ הגנה מפני טוקן רענון דפוק: אם גם אחרי ה-Refresh המכשיר מקבל 401, עוצרים הכל! ⭐️
+                if (response.status === 401) {
+                    clearLocalTokens();
+                    if (onAuthFailureCallback) onAuthFailureCallback();
+                    throw new APIError('Unauthorized even after token refresh.', 401);
+                }
             } catch (refreshError) {
+                // אם הרענון נכשל, מנקים מייד את הטוקנים סינכרונית כדי למנוע את מרוץ הזיכרון
+                clearLocalTokens();
                 processQueue(null);
                 throw refreshError;
             } finally {

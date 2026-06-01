@@ -18,8 +18,9 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { 
-  View, Text, TouchableOpacity, ScrollView, Image, TextInput, Alert, ActivityIndicator, StyleSheet, ImageBackground, Dimensions
+  View, Text, TouchableOpacity, Image, TextInput, Alert, ActivityIndicator, StyleSheet, ImageBackground, Dimensions
 } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler'; // 👈 התיקון הקריטי לגלילה באקספו 52
 import { styles as globalStyles } from '../../constants/styles';
 import { brand } from '../../constants/data';
 import { Ionicons } from '@expo/vector-icons';
@@ -136,77 +137,62 @@ export const TrendOptionsView = ({ trendName, onClose, openVibeCheck, openVoiceC
     };
 
     return (
-        <View style={[localStyles.flexBgWhite, { backgroundColor: isDark ? '#1C1C1E' : '#fff' }]}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={localStyles.trendScroll}>
+        <View style={[localStyles.flexBgWhite, { backgroundColor: isDark ? '#1C1C1E' : '#fff', paddingBottom: 10 }]}>
+            <View style={{ flex: 1, justifyContent: 'space-between' }}>
                 
-                <View style={localStyles.heroContainer}>
-                    <ImageBackground 
-                        source={{ uri: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=800&q=80' }} 
-                        style={localStyles.trendHero}
-                        imageStyle={localStyles.heroImageStyle}
-                        resizeMode="cover"
-                    >
-                        <View style={localStyles.heroOverlay}>
-                            <View style={localStyles.liveBadge}>
-                                <Text style={localStyles.liveText}>🔥 HOT TREND</Text>
+                <View>
+                    {/* כותרת מוקטנת (גובה 110 במקום 180) כדי לחסוך מקום במסך */}
+                    <View style={[localStyles.heroContainer, { marginTop: 5, marginBottom: 10 }]}>
+                        <ImageBackground 
+                            source={{ uri: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=800&q=80' }} 
+                            style={[localStyles.trendHero, { height: 110 }]} 
+                            imageStyle={localStyles.heroImageStyle}
+                            resizeMode="cover"
+                        >
+                            <View style={localStyles.heroOverlay}>
+                                <Text style={[localStyles.heroTitle, { fontSize: 22 }]}>{displayTrend}</Text>
+                                <Text style={localStyles.heroSub}>Join 15.4k people participating today.</Text>
                             </View>
-                            <Text style={localStyles.heroTitle}>{displayTrend}</Text>
-                            <Text style={localStyles.heroSub}>Join 15.4k people participating today.</Text>
+                        </ImageBackground>
+                    </View>
+
+                    {/* גריד קבוע המוגבל ל-6 אפשרויות מובילות בלבד ללא גלילה */}
+                    <View style={localStyles.horizontalPad}>
+                        <Text style={[globalStyles.h3, localStyles.stageTitle, { color: isDark ? '#fff' : '#111', marginBottom: 10 }]}>
+                            Choose Your Stage
+                        </Text>
+                        <View style={localStyles.gridContainer}>
+                            {TREND_ACTIONS.slice(0, 6).map((item) => (
+                                <TouchableOpacity 
+                                    key={item.id}
+                                    onPress={() => handleAction(item)} 
+                                    style={[
+                                        localStyles.actionCard, 
+                                        { 
+                                            width: '48%', 
+                                            padding: 12, 
+                                            marginBottom: 12, 
+                                            backgroundColor: isDark ? '#2C2C2E' : item.bg 
+                                        }
+                                    ]}
+                                    activeOpacity={0.8}
+                                >
+                                    <View style={[localStyles.iconCircle, { width: 38, height: 38, borderRadius: 19, marginBottom: 6, backgroundColor: isDark ? '#3A3A3C' : '#fff' }]}>
+                                        <Ionicons name={item.icon} size={20} color={item.color} />
+                                    </View>
+                                    <Text style={[localStyles.actionTitle, { color: isDark ? '#fff' : '#333', fontSize: 14 }]} numberOfLines={1}>
+                                        {item.title}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
                         </View>
-                    </ImageBackground>
-                </View>
-
-                <View style={localStyles.tagsWrapper}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={localStyles.horizontalPad}>
-                        {['#Lifestyle', '#Challenge', '#Viral', '#Morning', '#Community', '#Fun'].map((tag, i) => (
-                            <View key={i} style={[localStyles.trendTag, { backgroundColor: isDark ? '#333' : '#f5f5f5', borderColor: isDark ? '#444' : '#eee' }]}>
-                                <Text style={[localStyles.trendTagText, { color: isDark ? '#ddd' : '#555' }]}>{tag}</Text>
-                            </View>
-                        ))}
-                    </ScrollView>
-                </View>
-
-                <View style={localStyles.horizontalPad}>
-                    <Text style={[globalStyles.h3, localStyles.stageTitle, { color: isDark ? '#fff' : '#111' }]}>Choose Your Stage</Text>
-                    <View style={localStyles.gridContainer}>
-                        {TREND_ACTIONS.map((item) => (
-                            <TouchableOpacity 
-                                key={item.id}
-                                onPress={() => handleAction(item)} 
-                                style={[localStyles.actionCard, { backgroundColor: isDark ? '#2C2C2E' : item.bg }]}
-                                activeOpacity={0.8}
-                            >
-                                <View style={[localStyles.iconCircle, { backgroundColor: isDark ? '#3A3A3C' : '#fff' }]}>
-                                    <Ionicons name={item.icon} size={24} color={item.color} />
-                                </View>
-                                <Text style={[localStyles.actionTitle, { color: isDark ? '#fff' : '#333' }]} numberOfLines={1}>{item.title}</Text>
-                                <Text style={[localStyles.actionSub, { color: isDark ? '#aaa' : '#555' }]} numberOfLines={1}>{item.sub}</Text>
-                            </TouchableOpacity>
-                        ))}
                     </View>
                 </View>
 
-                <View style={localStyles.sectionContainer}>
-                    <View style={localStyles.leaderboardHeader}>
-                        <Text style={[globalStyles.h3, { color: isDark ? '#fff' : '#111' }]}>Top Trendsetters 👑</Text>
-                        <Text style={localStyles.seeAllBtn}>See All</Text>
-                    </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={localStyles.creatorsScroll}>
-                        {TOP_CREATORS.map((creator, i) => (
-                            <View key={i} style={localStyles.creatorItem}>
-                                <View style={[localStyles.creatorCircle, i === 0 && localStyles.firstPlace]}>
-                                    <Image source={{ uri: creator.img }} style={localStyles.fullImg} />
-                                    {creator.rank ? <View style={localStyles.rankBadge}><Text style={localStyles.rankText}>{creator.rank}</Text></View> : null}
-                                </View>
-                                <Text style={[localStyles.creatorName, { color: isDark ? '#ccc' : '#111' }]}>{creator.name}</Text>
-                            </View>
-                        ))}
-                    </ScrollView>
-                </View>
-
-                <View style={localStyles.mysteryWrap}>
+                {/* כפתור אתגר קבוע בתחתית המסך */}
+                <View style={[localStyles.mysteryWrap, { marginBottom: 10, marginTop: 0 }]}>
                     <TouchableOpacity 
-                        style={localStyles.mysteryButton}
+                        style={[localStyles.mysteryButton, { padding: 12 }]}
                         onPress={() => {
                             const randomAction = TREND_ACTIONS[Math.floor(Math.random() * TREND_ACTIONS.length)];
                             Alert.alert("🎲 Mystery Vibe", `Fate chose: ${randomAction.title}! Ready?`, [
@@ -215,16 +201,15 @@ export const TrendOptionsView = ({ trendName, onClose, openVibeCheck, openVoiceC
                             ]);
                         }}
                     >
-                        <Ionicons name="dice" size={24} color="#fff" style={localStyles.mysteryIcon} />
-                        <Text style={localStyles.mysteryText}>Spin the Wheel Challenge</Text>
+                        <Ionicons name="dice" size={20} color="#fff" style={localStyles.mysteryIcon} />
+                        <Text style={[localStyles.mysteryText, { fontSize: 14 }]}>Spin the Wheel Challenge</Text>
                     </TouchableOpacity>
                 </View>
 
-            </ScrollView>
+            </View>
         </View>
     );
 };
-
 // ════════════════════════════════════════════════════════════════
 // PRESERVED — LocationPickerView (unchanged from V2.0)
 // ════════════════════════════════════════════════════════════════

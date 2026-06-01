@@ -1,14 +1,25 @@
 // client/src/services/notificationSetup.js
-// ⭐️ KliqMind V6.0: Pure Expo Go Push Setup (No Native Crashes) ⭐️
+// ⭐️ KliqMind V8.1: Push → IncomingCallModal via Zustand store ⭐️
 //
-// הוסר השימוש ב- @react-native-firebase/messaging כדי למנוע קריסות באפליקציית Expo Go.
-// אנו משתמשים אך ורק ב-expo-notifications כדי להשיג את טוקן המכשיר ולשלוח לשרת.
+// Changes vs V8.0:
+//   [FIX]   Require cycle broken — authSlice no longer imports directly from
+//           this file. Instead, notificationBridge event bus is used:
+//           authSlice emits 'auth:login' → bridge → registerPushTokenAfterLogin()
+//
+// V8.0 preserved:
+//   - Push → IncomingCallModal via Zustand store
+//   - Foreground push triggers modal immediately
+//   - Auth-aware token registration
+//   - Cached device token
+//   - Both Android channels (default + calls)
 
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
-import { fetchAPI } from '../store/api'; // פונקציית התקשורת מול השרת שלך
-import { navigate } from '../navigation/RootNavigation'; // ⭐️ הוסף ייבוא למעלה
+import { fetchAPI } from '../store/api';
+import { navigate } from '../navigation/RootNavigation';
+import { useAppStore } from '../store/useAppStore';
+import { notificationBridge } from './notificationBridge';
 
 // ─── הגדרות התנהגות כשהאפליקציה פתוחה (Foreground) ───
 Notifications.setNotificationHandler({
@@ -20,76 +31,139 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// ─── הפונקציה המרכזית (נקראת מתוך App.js) ───
-export async function setupPushNotifications() {
+let cachedDeviceToken = null;
+let listenersInstalled = false;
+
+// ─────────────────────────────────────────────────────────────────────────
+// ⭐️ V8 HELPER — מציג את מודאל שיחה נכנסת על ידי הצבת state ב-store.
+// CallModals.js כבר מאזין ל-incomingCall ומציג את ה-UI עם כפתורים+צלצול.
+// ─────────────────────────────────────────────────────────────────────────
+function triggerIncomingCallModal(data) {
+  const roomId = data.roomId || data.entityId;
+  const callerId = data.callerId || data.actorId;
+  const callerName = data.callerName || 'Someone';
+
+  if (!roomId || !callerId) {
+    if (__DEV__) console.warn('[notificationSetup] Missing call data:', data);
+    return;
+  }
+
+  if (__DEV__) console.log(`📞 Triggering IncomingCallModal: ${callerName} → room=${roomId}`);
+
+  useAppStore.setState({
+    incomingCall: {
+      callerId,
+      callerName,
+      callerAvatar: data.callerAvatar || null,
+      roomId,
+    },
+  });
+}
+
+export async function setupPushNotifications({ isAuthenticated = false } = {}) {
   if (!Device.isDevice) {
     console.log('Push Notifications only work on physical devices.');
     return null;
   }
 
-  // 1. בקשת הרשאות מהמשתמש ברמת מערכת ההפעלה
   const granted = await requestPermissions();
   if (!granted) {
     if (__DEV__) console.warn('Push permission denied — user will not receive OS notifications.');
     return null;
   }
 
-  // 2. יצירת ערוץ אנדרואיד (Channel) - קריטי להופעת ההתראה "ליד השעון"
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('kliqtap_default', {
       name: 'KliqTap Alerts',
-      importance: Notifications.AndroidImportance.MAX, // חשיבות מקסימלית לתצוגה עילית
+      importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#1a56db',
       sound: 'default',
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
-  }
 
-  let fcmToken = null;
+    await Notifications.setNotificationChannelAsync('kliqtap_calls', {
+      name: 'KliqTap Calls',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [
+        0,    1000, 500, 1000, 500, 1000, 500,
+        1000, 500,  1000, 500, 1000, 500, 1000,
+        500,  1000, 500,  1000, 500, 1000,
+      ],
+      enableVibrate: true,
+      lightColor: '#34D399',
+      sound: 'default',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: true,
+      enableLights: true,
+    });
+  }
 
   try {
-    // 3. משיכת הטוקן הייחודי של המכשיר דרך Expo (תחליף ל-Firebase Native)
     const pushTokenData = await Notifications.getDevicePushTokenAsync();
-    fcmToken = pushTokenData.data;
-
-    if (fcmToken) {
-      await registerTokenWithServer(fcmToken);
-    }
+    cachedDeviceToken = pushTokenData?.data ?? null;
   } catch (e) {
-    console.error("Error getting push token:", e);
+    if (__DEV__) console.warn('Error getting device push token:', e);
+    cachedDeviceToken = null;
   }
 
-  // 4. האזנה לשינויים בטוקן (במידה והוא מתחלף על ידי גוגל/אפל)
-  Notifications.addPushTokenListener(async (pushTokenData) => {
-    if (pushTokenData && pushTokenData.data) {
-      await registerTokenWithServer(pushTokenData.data);
-    }
-  });
-
-  // 5. ניתוב כשהמשתמש לוחץ על התראה מחוץ לאפליקציה (Deep Link)
- // ... בתוך הפונקציה setupPushNotifications:
-  Notifications.addNotificationResponseReceivedListener((response) => {
-  const data = response.notification.request.content.data ?? {};
-  
-  // ⭐️ ניתוב חכם לכל סוגי ההתראות (הודעות, לייקים ותגובות)
-  if (data.type === 'MESSAGE' && data.chatId) {
-    navigate('ChatDetail', { chatId: data.chatId });
-  } else if ((data.type === 'LIKE' || data.type === 'COMMENT') && data.postId) {
-    navigate('PostDetail', { postId: data.postId });
+  if (cachedDeviceToken && isAuthenticated) {
+    await registerTokenWithServer(cachedDeviceToken);
+  } else if (cachedDeviceToken && !isAuthenticated) {
+    if (__DEV__) console.log('🔐 FCM token cached — will register after login.');
   }
-});
 
-  return fcmToken;
+  if (!listenersInstalled) {
+    Notifications.addPushTokenListener(async (pushTokenData) => {
+      if (pushTokenData?.data) {
+        cachedDeviceToken = pushTokenData.data;
+        await registerTokenWithServer(cachedDeviceToken).catch(() => {});
+      }
+    });
+
+    // ⭐️ V8: Foreground push — אם FCM מגיע בזמן שהאפליקציה פתוחה,
+    // למשל שיחה נכנסת — אנחנו רוצים שהמודאל יקפוץ מיד.
+    Notifications.addNotificationReceivedListener((notification) => {
+      const data = notification.request.content.data ?? {};
+      if (data.type === 'INCOMING_CALL') {
+        triggerIncomingCallModal(data);
+      }
+    });
+
+    // ניתוב כשהמשתמש לוחץ על התראה
+    Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data ?? {};
+
+      if (data.type === 'INCOMING_CALL' && (data.roomId || data.entityId)) {
+        triggerIncomingCallModal(data);
+      } else if (data.type === 'MESSAGE' && (data.chatId || data.entityId)) {
+        navigate('ChatDetail', { chatId: data.chatId || data.entityId });
+      } else if ((data.type === 'LIKE' || data.type === 'COMMENT') && data.postId) {
+        navigate('PostDetail', { postId: data.postId });
+      }
+    });
+
+    listenersInstalled = true;
+  }
+
+  return cachedDeviceToken;
 }
 
-// ─── פונקציות עזר ───
+export async function registerPushTokenAfterLogin() {
+  if (!Device.isDevice) return null;
 
-// בקשת הרשאות מאפל/גוגל
+  if (cachedDeviceToken) {
+    await registerTokenWithServer(cachedDeviceToken);
+    return cachedDeviceToken;
+  }
+
+  return await setupPushNotifications({ isAuthenticated: true });
+}
+
 async function requestPermissions() {
   const settings = await Notifications.getPermissionsAsync();
   let status = settings.status;
-  
+
   if (status !== 'granted') {
     const request = await Notifications.requestPermissionsAsync({
       ios: {
@@ -104,15 +178,20 @@ async function requestPermissions() {
   return status === 'granted';
 }
 
-// שליחת הטוקן לשרת שלנו לשמירה בבסיס הנתונים
 async function registerTokenWithServer(fcmToken) {
   try {
     await fetchAPI('/users/me/fcm-token', {
       method: 'POST',
       body: JSON.stringify({ fcmToken, platform: Platform.OS }),
     });
-    console.log('✅ FCM Token registered with server successfully.');
+    if (__DEV__) console.log('✅ FCM Token registered with server successfully.');
   } catch (e) {
     if (__DEV__) console.warn('Failed to register FCM token with server:', e);
   }
 }
+
+// ─── Bridge listener — שובר את ה-require cycle עם authSlice ───────────────
+// authSlice קורא notificationBridge.emit('auth:login') במקום לייבא ישירות.
+notificationBridge.on('auth:login', async () => {
+  await registerPushTokenAfterLogin();
+});

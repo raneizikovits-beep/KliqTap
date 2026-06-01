@@ -1,11 +1,9 @@
 // client/src/components/AppModals.js
-// ⭐️ V11.0 — Fixed BUG-A (missing props), BUG-F (race condition), removed dead code ⭐️
+// ⭐️ V11.4 — Integrated V4 Support, MentalSpace Focus Mode, Journal, and CreateTicket ⭐️
 //
-// CHANGES from V10.0:
-//   [FIX-A1] Added incomingCall, onAcceptIncomingCall, onDeclineIncomingCall, isAiSpeaking to signature
-//   [FIX-A2] IncomingCallModal now receives the unified handlers from AppRoot (single source of truth)
-//   [FIX-F]  handleOpenVoiceCall/handleOpenVideoCall now clear previous timeout before setting new one
-//   [DEAD-CODE] Removed duplicate internal handleAcceptIncomingCall logic that competed with AppRoot's
+// CHANGES from V11.3:
+//   [UPDATED] Passed `sheet={thirdSheet}` and `sheet={secondSheet}` to SupportScreen 
+//             so MentalSpace knows which focus tool to open (Breathe/Sounds/Affirmation).
 
 import React, { memo, useCallback, useMemo, useRef, useEffect } from "react";
 import { Modal, View, TouchableOpacity, Image, StyleSheet, SafeAreaView, Dimensions } from "react-native";
@@ -31,9 +29,14 @@ import LocationPicker from './modals/LocationPicker';
 import SearchScreen from '../screens/SearchScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SupportScreen from '../screens/SupportScreen';
+import SupportSheet from './SupportSheet'; 
 import VibeCheckCamera from '../screens/VibeCheckCamera';
 import LiveRoom from '../screens/LiveRoomScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+
+// ⭐️ NEW SCREENS ADDED HERE ⭐️
+import CreateTicketScreen from '../screens/CreateTicketScreen';
+import JournalScreen from '../screens/JournalScreen';
 
 const { height } = Dimensions.get('window');
 
@@ -47,12 +50,11 @@ const AppModals = memo(function AppModals({
   handleDeepLinkAction, getSettingsItems, getSearchItems, getIconGrid,
   setCurrentCallId, setVoiceModalOpen, setVideoModalOpen, setIsVibeCheckOpen, setFullScreenImage,
   handleAccountDeletionRequest, handleImagePickForGenericUpload,
-  profilePeek, setProfilePeek, groupUpdateOpen, setGroupUpdateOpen,
+  profilePeek, setProfilePeek, groupUpdateOpen, setGroupUpdateOpen, groupModalTab, setGroupModalTab,
   videoModalOpen, voiceModalOpen, currentCallId,
   isVibeCheckOpen, vibeCheckKey,
   pulseCreateOpen, pulseImageUri, isPostingPulse, setPulseCreateOpen, setPulseImageUri, handlePulseSubmit,
   fullScreenImage,
-  // ⭐️ [FIX-A1] Props that were silently dropped before:
   isAiSpeaking,
   incomingCall,
   onAcceptIncomingCall,
@@ -118,9 +120,7 @@ const AppModals = memo(function AppModals({
       setSecondSheet(null);
   }, [setIsVibeCheckOpen, setSecondSheet]);
 
-  // ⭐️ [FIX-A2] No more local accept/decline. Delegate to AppRoot's unified handlers.
   // AppRoot owns the call lifecycle (acceptCall/declineCall from store) — we just sync UI props.
-  // If the parent didn't pass handlers (e.g. unit tests), gracefully no-op.
   const handleAcceptIncomingCall = useCallback((callData) => {
       if (onAcceptIncomingCall) {
           onAcceptIncomingCall(callData);
@@ -159,7 +159,7 @@ const AppModals = memo(function AppModals({
           });
       };
 
-      if (['Search', 'Settings', 'Support', 'Leaderboard', 'Radar', 'LocationPicker', 'Profile', 'LiveRoom'].includes(source)) {
+      if (['Search', 'Settings', 'Support', 'Leaderboard', 'Radar', 'LocationPicker', 'Profile', 'LiveRoom', 'MentalSpace'].includes(source)) {
           return (
               <Modal visible={true} animationType="slide" transparent={true} onRequestClose={handleCloseSecondSheet}>
                   <View style={localStyles.cleanModalWrapper}>
@@ -172,9 +172,20 @@ const AppModals = memo(function AppModals({
 
                       {source === 'Search' && <SearchScreen onClose={handleCloseSecondSheet} onNavigate={handleDeepLinkAction} />}
                       {source === 'Settings' && <SettingsScreen onClose={handleCloseSecondSheet} onNavigate={handleSettingsNav} />}
-                      {source === 'Support' && <SupportScreen setSecondSheet={setSecondSheet} setThirdSheet={setThirdSheet} />}
+                      
+                      {source === 'Support' && <SupportSheet setSecondSheet={setSecondSheet} setThirdSheet={setThirdSheet} />}
+                      
+                      {/* ⭐️ Added sheet={secondSheet} here to pass Focus Mode data if opened directly */}
+                      {source === 'MentalSpace' && <SupportScreen sheet={secondSheet} setSecondSheet={setSecondSheet} setThirdSheet={setThirdSheet} />}
+                      
                       {source === 'Leaderboard' && <LeaderboardModal setSecondSheet={setSecondSheet} />}
-                      {source === 'Radar' && <RadarModal onClose={handleCloseSecondSheet} />}
+                      {source === 'Radar' && (
+                      <RadarModal
+                      onClose={handleCloseSecondSheet}
+                      setSecondSheet={setSecondSheet}
+                      setGroupModalTab={setGroupModalTab}
+                      />
+                      )}
                       {source === 'LocationPicker' && <LocationPicker onClose={handleCloseSecondSheet} />}
 
                       {source === 'LiveRoom' && (
@@ -275,14 +286,47 @@ const AppModals = memo(function AppModals({
 
       {renderSecondSheetContent}
 
-      {thirdSheet && thirdSheet.source !== 'Comments' && thirdSheet.source !== 'Support' && (
+      {/* ⭐️ EXCLUDED ALL OUR CUSTOM SCREENS FROM THE DEFAULT THIRDSHEET RENDERER */}
+      {thirdSheet && 
+       thirdSheet.source !== 'Comments' && 
+       thirdSheet.source !== 'Support' && 
+       thirdSheet.source !== 'MentalSpace' && 
+       thirdSheet.source !== 'CreateTicket' && 
+       thirdSheet.source !== 'Journal' && (
           <ThirdSheet sheet={thirdSheet} onClose={() => setThirdSheet(null)} />
       )}
 
+      {/* ⭐️ CUSTOM ROUTING FOR SUPPORT HUB & MENTAL SPACE */}
       {thirdSheet && thirdSheet.source === 'Support' && (
           <Modal visible={true} animationType="slide" transparent={true} onRequestClose={() => setThirdSheet(null)}>
               <View style={localStyles.cleanModalWrapper}>
-                  <SupportScreen setSecondSheet={() => setThirdSheet(null)} setThirdSheet={setFourthSheet} />
+                  <SupportSheet setSecondSheet={() => setThirdSheet(null)} setThirdSheet={setFourthSheet} />
+              </View>
+          </Modal>
+      )}
+
+      {thirdSheet && thirdSheet.source === 'MentalSpace' && (
+          <Modal visible={true} animationType="slide" transparent={true} onRequestClose={() => setThirdSheet(null)}>
+              <View style={localStyles.cleanModalWrapper}>
+                  {/* ⭐️ Added sheet={thirdSheet} here to pass Focus Mode data! ⭐️ */}
+                  <SupportScreen sheet={thirdSheet} setSecondSheet={() => setThirdSheet(null)} setThirdSheet={setFourthSheet} />
+              </View>
+          </Modal>
+      )}
+
+      {/* ⭐️ NEW ROUTES: CREATE TICKET & JOURNAL ⭐️ */}
+      {thirdSheet && thirdSheet.source === 'CreateTicket' && (
+          <Modal visible={true} animationType="slide" transparent={true} onRequestClose={() => setThirdSheet(null)}>
+              <View style={localStyles.cleanModalWrapper}>
+                  <CreateTicketScreen onClose={() => setThirdSheet(null)} />
+              </View>
+          </Modal>
+      )}
+
+      {thirdSheet && thirdSheet.source === 'Journal' && (
+          <Modal visible={true} animationType="slide" transparent={true} onRequestClose={() => setThirdSheet(null)}>
+              <View style={localStyles.cleanModalWrapper}>
+                  <JournalScreen onClose={() => setThirdSheet(null)} />
               </View>
           </Modal>
       )}
@@ -308,7 +352,6 @@ const AppModals = memo(function AppModals({
           onClose={() => { setSecondSheet(null); setThirdSheet(null); }}
       />
 
-      {/* Always-mounted call modals so their internal effects can run */}
       <VideoCallModal
           isOpen={videoModalOpen}
           onClose={() => setVideoModalOpen(false)}
@@ -322,8 +365,6 @@ const AppModals = memo(function AppModals({
           onSwitchToVideo={handleSwitchToVideo}
       />
 
-      {/* ⭐️ [FIX-A2] IncomingCallModal now receives the call data from AppRoot via props,
-            and accept/decline delegate to AppRoot's unified handlers (single source of truth). */}
       <IncomingCallModal
           incomingCall={incomingCall}
           onAccept={handleAcceptIncomingCall}

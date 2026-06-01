@@ -1,35 +1,31 @@
-// client/tsconfig.json
 {
-
-
-
-  // ירושה מהגדרות הבסיס של אקספו
-  "extends": "expo/tsconfig.base", 
-  
   "compilerOptions": {
-    // 1. **פתרון ל-api.js**: חובה לאפשר ייבוא קבצי JavaScript
-    "allowJs": true, 
-    "ignoreDeprecations": "6.0",
-
-    // 2. **פתרון ל-socket.io-client**: מבטיח שהקומפיילר מוצא חבילות ב-node_modules
-    "moduleResolution": "node", 
-    
-    // 3. משפר את התאימות בין מודולים
-    "esModuleInterop": true,
-    
-    // 4. ודא שאתה משתמש בגרסאות מודרניות
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
     "target": "ES2020",
-    "module": "commonjs", 
-    
-    // 5. הגדרות נקיות לפרויקט לקוח (מומלץ)
-    "strict": true,
-    "skipLibCheck": true 
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "forceConsistentCasingInFileNames": false,
+    "noFallthroughCasesInSwitch": false
   },
-  
   "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.js",
-    "**/*.jsx"
-  ]
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "**/*spec.ts"
+  ],
+  "extends": "expo/tsconfig.base"
 }

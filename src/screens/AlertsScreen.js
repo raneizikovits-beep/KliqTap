@@ -1,23 +1,21 @@
 // client/src/screens/AlertsScreen.js
-// ⭐️ KLIQTAP V8.0 — Fixed tab filtering, socket-ready, type-aware filters ⭐️
+// ⭐️ KLIQTAP V9.1 — Mark-as-read only, no broken navigation ⭐️
 //
-// Changes vs V7.0:
-//   [FIX-1] "system" tab no longer swallows EVERY non-invite-non-comment item.
-//           It now strictly filters by type === 'SYSTEM_ALERT'. (Previously
-//           Likes, Follows, and unknown types all appeared in "system".)
-//   [FIX-2] "invites" tab now also matches the new 'INVITE' enum value, not
-//           just the FOLLOW heuristic.
-//   [FIX-3] "mentions" tab matches 'MENTION' explicitly as well as 'COMMENT'.
-//   [FIX-4] Optimistic mark-as-read failures are now reverted gracefully,
-//           and an error is surfaced (not silently swallowed) so the user
-//           never sees a permanently-stuck-read item that's still unread on
-//           the server.
-//   [FIX-5] Imports React.useRef for socket subscription cleanup.
-//   [NEW]   Real-time socket listener stub — wire to your existing socket
-//           singleton to get instant in-app updates the moment the server
-//           pushes a notification, NO refetch needed.
+// Why this version exists:
+//   V9.0 used navigate('ChatDetail', ...) from RootNavigation.js to deep-link
+//   on tap. BUT RootNavigation.js explicitly states:
+//     "Currently KliqTap uses a prop-based navigation system... React
+//      Navigation is NOT wired up yet. Calls to navigateGlobal() will safely
+//      no-op until NavigationContainer is added."
+//   → That's why you saw:
+//     "ERROR The action 'NAVIGATE' with payload {...} was not handled by any navigator"
 //
-// All existing functionality preserved. No regressions.
+//   This version reverts to the original ask: just mark as read, no navigation.
+//   The unread highlight (unreadBg) disappears the instant you tap.
+//   No empty bottom sheet, no broken nav, no warnings.
+//
+// When NavigationContainer is wired up later, we can re-enable smart deep-linking
+// from inside handleItemPress (the code is preserved in the commented block).
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
@@ -41,13 +39,12 @@ const TABS = [
   { id: 'invites',  label: 'Invites' },
   { id: 'mentions', label: 'Mentions' },
   { id: 'messages', label: 'Messages' },
-  { id: 'kliqmind', label: 'KliqMind' }, // ⭐️ הוספנו טאב ייעודי לבינה מלאכותית
+  { id: 'kliqmind', label: 'KliqMind' },
   { id: 'system',   label: 'System' },
 ];
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────
 
-// ⭐️ כאן KliqMind מיון את ההתראות לטאבים הנכונים
 function matchesTab(notification, tab) {
   const type = notification.type || '';
   const lowerText = (notification.text || '').toLowerCase();
@@ -61,50 +58,40 @@ function matchesTab(notification, tab) {
       return type === 'MENTION' || type === 'COMMENT' || lowerText.includes('@');
     case 'messages':
       return type === 'MESSAGE';
-    case 'kliqmind': // ⭐️ תופס את כל התראות ה-AI
+    case 'kliqmind':
       return type === 'AI_INSIGHT' || lowerText.includes('kliqmind') || lowerText.includes('ai');
-    case 'system': // ⭐️ כולל כעת גם אבטחה ופרטיות
-      return type === 'SYSTEM_ALERT' || type === 'SECURITY' || type === 'PRIVACY'; 
+    case 'system':
+      return type === 'SYSTEM_ALERT' || type === 'SECURITY' || type === 'PRIVACY';
     default:
       return true;
   }
 }
 
-// ⭐️ כאן אנחנו קובעים איזה אייקון וצבע יהיה לכל התראה
 function resolveNotificationVisuals(item, isDark) {
   const type = item.type || '';
   const lowerText = (item.text || '').toLowerCase();
 
-  // 1. התראות מערכת ואבטחה (מגן צהוב/כתום)
   if (type === 'SYSTEM_ALERT' || type === 'SECURITY' || type === 'PRIVACY' || lowerText.includes('security') || lowerText.includes('login')) {
     return { iconName: 'shield-checkmark', iconColor: '#FF9800', bgIcon: isDark ? '#402B15' : '#FFF3E0', isInvite: false };
   }
-  // 2. התראות של KliqMind AI (כוכבים סגולים)
   if (type === 'AI_INSIGHT' || lowerText.includes('kliqmind') || lowerText.includes('ai')) {
     return { iconName: 'sparkles', iconColor: '#9C27B0', bgIcon: isDark ? '#311B3D' : '#F3E5F5', isInvite: false };
   }
-  // 3. פוסטים חדשים מחברים במעגל (תמונה ירוקה)
   if (type === 'NEW_POST') {
     return { iconName: 'images', iconColor: '#4CAF50', bgIcon: isDark ? '#1B3320' : '#E8F5E9', isInvite: false };
   }
-  // 4. הודעות צ'אט
   if (type === 'MESSAGE') {
     return { iconName: 'chatbox-ellipses', iconColor: '#4A90E2', bgIcon: isDark ? '#16243A' : '#E3F2FD', isInvite: false };
   }
-  // 5. הזמנות ועוקבים
   if (type === 'INVITE' || type === 'FOLLOW' || type === 'GROUP_REQUEST' || lowerText.includes('invite') || lowerText.includes('join')) {
     return { iconName: 'people', iconColor: '#E91E63', bgIcon: isDark ? '#421424' : '#FCE4EC', isInvite: type === 'INVITE' || type === 'GROUP_REQUEST' || lowerText.includes('invite') };
   }
-  // 6. תגובות ואזכורים
   if (type === 'COMMENT' || type === 'MENTION' || lowerText.includes('comment') || lowerText.includes('@')) {
     return { iconName: 'chatbubble', iconColor: '#009688', bgIcon: isDark ? '#14302E' : '#E0F2F1', isInvite: false };
   }
-  // 7. לייקים
   if (type === 'LIKE' || lowerText.includes('like') || lowerText.includes('love')) {
     return { iconName: 'heart', iconColor: '#E91E63', bgIcon: isDark ? '#421424' : '#FCE4EC', isInvite: false };
   }
-  
-  // ברירת מחדל (פעמון כחול)
   return { iconName: 'notifications', iconColor: Data.brand.blue, bgIcon: isDark ? '#1A2634' : '#E3F2FD', isInvite: false };
 }
 
@@ -118,7 +105,6 @@ const AlertItem = React.memo(({ item, onPress, onAction, isDark }) => {
   const unreadTextColor = isDark ? '#fff' : '#000';
   const timeColor = isDark ? '#888' : '#999';
 
-  // ⭐️ הוספה: שליפת שם המשתמש והרכבת טקסט חכם ⭐️
   const actorName = item.actor?.name || item.actor?.username;
   let displayText = item.text;
 
@@ -143,7 +129,6 @@ const AlertItem = React.memo(({ item, onPress, onAction, isDark }) => {
         </View>
 
         <View style={{ flex: 1, marginLeft: 12 }}>
-          {/* ⭐️ שינוי: שימוש ב-displayText במקום item.text ⭐️ */}
           <Text style={[localStyles.cardText, { color: textColor }, !item.isRead && { fontWeight: '700', color: unreadTextColor }]}>
             {displayText}
           </Text>
@@ -180,7 +165,7 @@ export default function AlertsScreen({ setSecondSheet, setThirdSheet }) {
     markNotificationRead,
     markAllNotificationsRead,
     userSettings,
-    socket, // ⭐️ optional: your socket singleton on the store
+    socket,
   } = useAppStore(useShallow(state => ({
     notifications: state.notifications,
     isNotificationsLoading: state.isNotificationsLoading,
@@ -196,17 +181,13 @@ export default function AlertsScreen({ setSecondSheet, setThirdSheet }) {
   const [activeTab, setActiveTab] = useState('all');
   const lastFetchRef = useRef(0);
 
-  // Initial load
   useEffect(() => {
     if (fetchNotifications) fetchNotifications();
   }, [fetchNotifications]);
 
-  // ⭐️ Real-time updates: listen for "notification:new" pushed from ChatGateway.
-  // If your socket is attached differently, adapt the subscription style here.
   useEffect(() => {
     if (!socket || !socket.on) return;
     const handler = () => {
-      // Debounce: don't refetch more than once a second.
       const now = Date.now();
       if (now - lastFetchRef.current < 1000) return;
       lastFetchRef.current = now;
@@ -233,19 +214,16 @@ export default function AlertsScreen({ setSecondSheet, setThirdSheet }) {
     }
   }, [setThirdSheet]);
 
-// Optimistic mark-as-read — instant UI, server sync in background, revert on fail.
+  // ─────────────────────────────────────────────────────────────────────
+  // ⭐️ V9.1: Just mark as read. No navigation. No popup.
+  // Highlight (unreadBg) disappears the instant you tap — exactly the UX
+  // you asked for: "highlighted until I touch, then back to normal".
+  //
+  // 💡 When NavigationContainer is wired up in the future, uncomment the
+  //    block below to re-enable smart deep-linking on tap.
+  // ─────────────────────────────────────────────────────────────────────
   const handleItemPress = useCallback(async (item) => {
-    
-    // ⭐️ KLIQMIND FIX: חסימת ניווט (Navigation) עבור התראות מערכת ו-AI
-    const noNavigationTypes = ['SYSTEM_ALERT', 'SECURITY', 'PRIVACY', 'AI_INSIGHT'];
-    const shouldNavigate = !noNavigationTypes.includes(item.type);
-
-    // פותח חלון חדש *רק* אם זו לא התראת מערכת או AI
-    if (shouldNavigate && setThirdSheet) {
-      setThirdSheet({ title: item.type?.replace('_', ' ') || 'Notification', body: item.text });
-    }
-
-    // מכאן והלאה: מנגנון סימון כ"נקרא" (רץ תמיד, לכל סוגי ההתראות)
+    // Optimistic mark-as-read — instant UI update, server sync in background
     if (item.isRead) return;
 
     if (markNotificationRead) {
@@ -253,15 +231,32 @@ export default function AlertsScreen({ setSecondSheet, setThirdSheet }) {
       return;
     }
 
+    // Fallback if the store doesn't expose the action
     try {
       await fetchAPI(`/notifications/${item.id}/read`, { method: 'PATCH' });
       if (fetchNotifications) fetchNotifications();
     } catch (error) {
       if (__DEV__) console.warn('Failed to mark notification as read:', error);
-      // Soft revert: a refetch syncs us back to ground truth.
+      // Soft revert: a refetch syncs us back to ground truth
       if (fetchNotifications) fetchNotifications();
     }
-  }, [setThirdSheet, markNotificationRead, fetchNotifications]);
+
+    // ─── Future: smart deep-linking (requires NavigationContainer in AppRoot) ───
+    // import { navigate } from '../navigation/RootNavigation';
+    // switch (item.type) {
+    //   case 'MESSAGE':
+    //     if (item.entityId) navigate('ChatDetail', { chatId: item.entityId });
+    //     break;
+    //   case 'LIKE':
+    //   case 'COMMENT':
+    //   case 'MENTION':
+    //     if (item.entityId) navigate('PostDetail', { postId: item.entityId });
+    //     break;
+    //   case 'INCOMING_CALL':
+    //     if (item.entityId) navigate('IncomingCall', { roomId: item.entityId, callerId: item.actorId });
+    //     break;
+    // }
+  }, [markNotificationRead, fetchNotifications]);
 
   const handleMarkAllAsRead = useCallback(async () => {
     if (markAllNotificationsRead) {
@@ -278,7 +273,6 @@ export default function AlertsScreen({ setSecondSheet, setThirdSheet }) {
 
   const sectionsData = useMemo(() => {
     const safeList = Array.isArray(notifications) ? notifications : [];
-
     const filtered = safeList.filter(n => matchesTab(n, activeTab));
 
     const mapped = filtered.map(item => ({
@@ -327,7 +321,6 @@ export default function AlertsScreen({ setSecondSheet, setThirdSheet }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#000' : '#F8F9FA' }}>
-
       <View style={[localStyles.header, { backgroundColor: isDark ? '#1C1C1E' : '#fff' }]}>
         <View>
           <Text style={[styles.h1, { color: isDark ? '#fff' : '#000' }]}>Alerts</Text>

@@ -11,7 +11,7 @@ const getIconName = (type, active) => {
         case "home": return active ? "home" : "home-outline";
         case "explore": return active ? "compass" : "compass-outline";
         case "groups": return active ? "people" : "people-outline"; 
-        case "camera": return active ? "camera" : "camera-outline";
+        case "arena": return active ? "trophy" : "trophy-outline"; // ✅ שונה מ-camera ל-arena
         case "messages": return active ? "chatbubble" : "chatbubble-outline";
         case "notifications": return active ? "notifications" : "notifications-outline";
         case "profile": return active ? "person" : "person-outline";
@@ -44,7 +44,6 @@ const TabBtn = ({ label, active, onPress, onExtra, type }) => {
           active && { backgroundColor: activeBgColor },
           !active && isDark && { backgroundColor: 'transparent' } 
       ]}>
-        {/* האייקון הוקטן ל-22 כדי למנוע צפיפות */}
         <Ionicons name={iconName} size={22} color={iconColor} />
       </View>
       
@@ -63,8 +62,8 @@ const localStyles = StyleSheet.create({
         height: 60,
     },
     iconContainer: {
-        width: 36, // הוקטן מ-40
-        height: 36, // הוקטן מ-40
+        width: 36,
+        height: 36,
         borderRadius: 18, 
         justifyContent: 'center',
         alignItems: 'center',
@@ -79,7 +78,7 @@ const localStyles = StyleSheet.create({
         elevation: 5,
     },
     label: {
-        fontSize: 9, // הוקטן מ-10
+        fontSize: 9,
         fontWeight: '500',
     }
 });

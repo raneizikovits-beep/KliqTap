@@ -841,6 +841,14 @@ export const createChatSlice = (set, get) => ({
             return;
         }
 
+        // ✅ FIX: Join the socket room BEFORE sending the offer.
+        // Previously the offer was sent before joinVoiceRoom, so the caller
+        // wasn't in the room yet when the answer/ICE arrived — causing the
+        // PeerConnection to close after ~5s with no response.
+        if (typeof chatService.joinVoiceRoom === 'function') {
+            try { chatService.joinVoiceRoom(String(roomId)); } catch (e) {}
+        }
+
         try {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);

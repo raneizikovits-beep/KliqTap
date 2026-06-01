@@ -1,20 +1,11 @@
 // client/src/components/modals/PostCreateModal.js
-// ⭐️ V2 PRODUCTION: Web Publishing Fix + Defensive Guards + Dark Mode (preserved 100%)
-//
-// CRITICAL FIXES IN THIS VERSION:
-// [FIX-1] Web (Chrome) couldn't publish text-only canvas posts:
-//         - ViewShot doesn't run on web → finalMediaUri stayed null
-//         - overlayText was lost because finalCaption used only `caption` (input field)
-//         - Server received empty post → silent failure
-//         New behavior: on web, overlayText is merged into the caption so nothing is lost.
-//
-// [FIX-2] Defensive empty-submission guard after merge logic, so users never
-//         see a fake "success" toast for an empty post.
-//
-// [FIX-3] Safe handling of viewShotRef.current.capture() with proper try/catch
-//         and a typed warning, instead of swallowing errors.
-//
-// All existing functionality, dark mode logic, and styles are preserved.
+// 🏆 KliqMind V4 — Radar Fully Wired + Media Fix + Props Restored
+// Fixes:
+//   [BUG-1] Web Publishing Fix (preserved)
+//   [BUG-2] setPulseCreateOpen is not a function (preserved)
+//   [BUG-3] Property 'dailyChallenge' doesn't exist (preserved)
+//   [BUG-4] POST Image/Video Display Distortion (Fixed)
+//   [BUG-5] Restored postImageUri prop that was accidentally removed in V3 🚀
 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
@@ -26,11 +17,12 @@ import ViewShot from 'react-native-view-shot';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker'; 
 import { Video, ResizeMode } from 'expo-av';
-import * as Data from '../../constants/data';
-import { useAppStore } from '../../store/useAppStore'; 
 import Toast from 'react-native-toast-message';
 
-const { width } = Dimensions.get('window');
+import * as Data from '../../constants/data';
+import { useAppStore } from '../../store/useAppStore'; 
+
+const { width, height: screenHeight } = Dimensions.get('window');
 
 const COLORS = [
     '#ffffff', '#000000', '#FFD700', '#FF4500', '#00FFFF', 
@@ -48,7 +40,8 @@ const FONTS = [
     'serif', 'monospace', 'sans-serif', 'cursive'
 ];
 
-export function PostCreateModal({ visible, onClose, postToEdit = null, preSelectedImageUri = null }) {
+// 🚀 החזרנו את המשתנים postImageUri ו-imageUri לשורת הפונקציה 🚀
+export function PostCreateModal({ visible, onClose, postToEdit = null, preSelectedImageUri = null, postImageUri = null, imageUri = null }) {
   
   const { createPost, editPost, userSettings } = useAppStore(state => ({
     createPost: state.createPost,
@@ -72,6 +65,8 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
   const [textBgStyle, setTextBgStyle] = useState(0); 
   const [fontIndex, setFontIndex] = useState(0);
   const [canvasBgIndex, setCanvasBgIndex] = useState(0);
+  
+  const [imageAspectRatio, setImageAspectRatio] = useState(1);
   
   const viewShotRef = useRef(null); 
   const pan = useRef(new Animated.ValueXY()).current; 
@@ -112,8 +107,11 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
   }, [isEditingOverlay]);
 
   useEffect(() => {
-      if (visible) {
-          setLocalImageUri(preSelectedImageUri || null);
+     if (visible) {
+          // 🚀 התיקון המדויק - קליטה מכל המקורות האפשריים:
+          const incomingUri = postImageUri || imageUri || preSelectedImageUri || null;
+          
+          setLocalImageUri(incomingUri);
           setCaption(postToEdit ? postToEdit.text : '');
           setOverlayText('');
           setTextColor(COLORS[0]);
@@ -121,21 +119,31 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
           setTextBgStyle(0);
           setFontIndex(0);
           setCanvasBgIndex(0);
-          setIsVideo(false);
+          setIsVideo(incomingUri ? (incomingUri.endsWith('.mp4') || incomingUri.endsWith('.mov')) : false);
           setIsCaptionFocused(false);
           pan.setValue({ x: 0, y: 0 });
           setIsPosting(false);
-      }
-  }, [visible, postToEdit, preSelectedImageUri, pan]);
 
-  // ════════════════════════════════════════════════════════════════
-  // [FIX-1, FIX-2, FIX-3] Web Publishing Fix
-  // ════════════════════════════════════════════════════════════════
+          if (incomingUri && !incomingUri.endsWith('.mp4') && !incomingUri.endsWith('.mov')) {
+            Image.getSize(incomingUri, (w, h) => {
+              const ratio = w / h;
+              if (ratio > 0 && ratio < Infinity) {
+                setImageAspectRatio(ratio);
+              }
+            }, (error) => {
+              console.warn('[PostCreateModal] getSize error', error);
+              setImageAspectRatio(1); 
+            });
+          } else {
+            setImageAspectRatio(1); 
+          }
+      }
+  }, [visible, postToEdit, preSelectedImageUri, postImageUri, imageUri, pan]);
+
   const handleSubmit = async () => {
     if (isPosting) return;
     Keyboard.dismiss();
 
-    // Early validation — if nothing at all, bail out
     if (!caption.trim() && !overlayText.trim() && !localImageUri) {
         Alert.alert("Empty Post", "Write something or add media!");
         return;
@@ -145,43 +153,31 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
     try {
         let finalMediaUri = localImageUri;
         
-        // [FIX-3] ViewShot capture only works on native. Wrap safely.
         if (Platform.OS !== 'web' && !isVideo && overlayText.trim().length > 0) {
              if (viewShotRef.current) {
                  try {
                      finalMediaUri = await viewShotRef.current.capture();
                  } catch (err) {
                      console.warn("[PostCreateModal] ViewShot capture failed:", err?.message);
-                     // Don't fail the whole post — fall through. The merge logic below
-                     // will still preserve overlayText as part of the caption.
                  }
              }
         }
 
-        // [FIX-1] Build the final caption. 
-        // On web, ViewShot can't capture the canvas, so we merge overlayText into
-        // the caption to ensure the user's content reaches the server.
         let finalCaption = caption.trim();
         const overlayTrimmed = overlayText.trim();
         
         if (Platform.OS === 'web' && overlayTrimmed && !localImageUri) {
-            // Pure text-only post on web: overlay text IS the post content
             finalCaption = finalCaption
                 ? `${finalCaption}\n\n${overlayTrimmed}`
                 : overlayTrimmed;
         }
         
-        // Legacy: if media exists but no caption, send a space (server compat)
         if (finalCaption === '' && finalMediaUri) {
             finalCaption = ' '; 
         }
 
-        // [FIX-2] Final defensive guard — never submit truly empty content
         if (!finalCaption.trim() && !finalMediaUri) {
-            Alert.alert(
-                "Empty Post",
-                "Your post content couldn't be captured. Please type in the caption field or add an image."
-            );
+            Alert.alert("Empty Post", "You can't publish an empty post!");
             setIsPosting(false);
             return;
         }
@@ -191,22 +187,16 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
             Toast.show({ type: 'success', text1: 'Updated!', text2: 'Post saved successfully.' });
         } else {
             await createPost(finalCaption, null, finalMediaUri);
-            Toast.show({ 
-              type: 'success', 
-              text1: '📝 +3 PTS!', 
-              text2: 'Your vibe is now live on the Feed!' 
-            });
+            Toast.show({ type: 'success', text1: '📝 +3 PTS!', text2: 'Vibe published on the Feed!' });
         }
         
         onClose();
     } catch (e) {
         Alert.alert("Error", "Failed to process post. Please try again.");
-        console.error("[PostCreateModal] Post Creation Error:", e);
     } finally {
         setIsPosting(false);
     }
   };
-
 
   const handleOpenCamera = async () => {
     try {
@@ -226,6 +216,10 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
             setLocalImageUri(asset.uri);
             setIsVideo(asset.type === 'video' || asset.uri.endsWith('.mp4') || asset.uri.endsWith('.mov'));
             setOverlayText(''); 
+            
+            if (asset.type === 'image' && asset.width > 0 && asset.height > 0) {
+              setImageAspectRatio(asset.width / asset.height);
+            }
         }
     } catch (error) { 
         console.error("[PostCreateModal] Camera Error:", error); 
@@ -249,6 +243,10 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
                setLocalImageUri(asset.uri);
                setIsVideo(asset.type === 'video' || asset.uri.endsWith('.mp4') || asset.uri.endsWith('.mov'));
                setOverlayText(''); 
+               
+               if (asset.type === 'image' && asset.width > 0 && asset.height > 0) {
+                 setImageAspectRatio(asset.width / asset.height);
+               }
            }
        } catch (error) { 
            console.error("[PostCreateModal] Media Picker Error:", error); 
@@ -278,7 +276,7 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
                   <View style={[localStyles.headerTop, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderBottomColor: isDark ? '#333' : '#eee' }]}>
                       <View style={localStyles.headerTitleRow}>
                           <Ionicons name="create" size={26} color={Data.brand.blue || '#007AFF'} />
-                          <Text style={[localStyles.title, { color: isDark ? '#fff' : '#111' }]}>{postToEdit ? "Edit Post" : "Create Post"}</Text>
+                          <Text style={[localStyles.title, { color: isDark ? '#fff' : '#111' }]}>{postToEdit ? "Edit Kliq Feed" : "Kliq Feed 🤍"}</Text>
                       </View>
                       <TouchableOpacity onPress={onClose} style={[localStyles.closeBtn, { backgroundColor: isDark ? '#333' : '#eee' }]}>
                           <Ionicons name="close" size={24} color={isDark ? '#ccc' : "#666"} />
@@ -298,7 +296,7 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
                           { color: isDark ? '#fff' : '#222' },
                           isEditingOverlay && [localStyles.captionInputShrunk, { color: isDark ? '#888' : '#888' }]
                       ]}
-                      placeholder="What's on your mind?"
+                      placeholder="Write something..."
                       placeholderTextColor={isDark ? "#888" : "#888"}
                       multiline
                       value={caption}
@@ -311,14 +309,9 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
                       <TouchableOpacity activeOpacity={1} style={localStyles.mediaContainer} onPress={() => setIsEditingOverlay(false)}>
                           {isVideo ? (
                               Platform.OS === 'web' ? (
-                                  <video 
-                                      src={localImageUri} 
-                                      style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
-                                      controls 
-                                      playsInline
-                                  />
+                                  <video src={localImageUri} style={{ width: '100%', height: '100%', objectFit: 'contain' }} controls playsInline />
                               ) : (
-                                  <View style={localStyles.viewShotContainer}>
+                                  <View style={localStyles.viewShotContainerVideo}>
                                       <Video
                                           source={{ uri: localImageUri }}
                                           style={localStyles.imageCanvas}
@@ -333,7 +326,7 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
                               <ViewShot 
                                   ref={viewShotRef} 
                                   options={{ format: "png", quality: 1.0 }} 
-                                  style={[localStyles.viewShotContainer, !localImageUri && { backgroundColor: TEXT_ONLY_BACKGROUNDS[canvasBgIndex] }]}
+                                  style={[localStyles.viewShotContainerDynamic, { aspectRatio: imageAspectRatio }, !localImageUri && { backgroundColor: TEXT_ONLY_BACKGROUNDS[canvasBgIndex] }]}
                               >
                                   {localImageUri && (
                                       <Image source={{ uri: localImageUri }} style={localStyles.imageCanvas} resizeMode="contain" />
@@ -353,7 +346,7 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
                                           {isEditingOverlay ? (
                                               <TextInput
                                                   style={[localStyles.overlayInput, { color: textColor, fontSize: textSize, backgroundColor: getBgColor(), fontFamily: FONTS[fontIndex] }]}
-                                                  placeholder="Type on canvas..."
+                                                  placeholder="Type on media..."
                                                   placeholderTextColor="rgba(255,255,255,0.7)"
                                                   multiline autoFocus
                                                   value={overlayText}
@@ -382,7 +375,7 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
               {isCaptionFocused ? (
                   <View style={[localStyles.captionDoneBar, { backgroundColor: isDark ? '#1C1C1E' : '#f9f9f9', borderTopColor: isDark ? '#333' : '#eee' }]}>
                       <TouchableOpacity style={localStyles.inlineDoneBtn} onPress={() => Keyboard.dismiss()}>
-                          <Text style={localStyles.inlineDoneBtnText}>Done Typing</Text>
+                          <Text style={localStyles.inlineDoneBtnText}>Done</Text>
                       </TouchableOpacity>
                   </View>
               ) : (
@@ -473,12 +466,8 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
                                     <Text style={[localStyles.dockLabel, { color: isDark ? '#aaa' : (Data.brand.soft || '#666') }]}>Gallery</Text>
                                 </TouchableOpacity>
                                 
-                                <TouchableOpacity 
-                                    onPress={handleSubmit} 
-                                    disabled={isPosting} 
-                                    style={[localStyles.submitActionBtn, isPosting && { opacity: 0.6 }]}
-                                >
-                                    {isPosting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={localStyles.submitActionText}>Post</Text>}
+                                <TouchableOpacity onPress={handleSubmit} disabled={isPosting} style={[localStyles.submitActionBtn, isPosting && { opacity: 0.6 }]}>
+                                    {isPosting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={localStyles.submitActionText}>Share 🤍 </Text>}
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -493,6 +482,10 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
 }
 
 const localStyles = StyleSheet.create({
+    splashContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+    backdrop: { position: "absolute", top: 0, left: 0, width: width, height: screenHeight, zIndex: 5, backgroundColor: "transparent" },
+    statusPopup: { position: "absolute", bottom: 170, right: 16, padding: 10, borderRadius: 12, zIndex: 11, flexDirection: "row", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+
     overlay: { 
         flex: 1, 
         backgroundColor: 'rgba(0,0,0,0.5)', 
@@ -502,7 +495,6 @@ const localStyles = StyleSheet.create({
         borderTopLeftRadius: 30, 
         borderTopRightRadius: 30,
         maxHeight: '95%',
-        minHeight: '60%',
         shadowColor: '#000', shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10,
         overflow: 'hidden',
         flex: 1
@@ -524,11 +516,12 @@ const localStyles = StyleSheet.create({
     captionDoneBar: { padding: 10, borderTopWidth: 1, alignItems: 'flex-end' },
     
     mediaContainer: { width: '100%', alignItems: 'center', position: 'relative', paddingBottom: 20 },
-    viewShotContainer: { width: width, height: width, backgroundColor: 'transparent', overflow: 'hidden', justifyContent: 'center' },
-    imageCanvas: { width: '100%', height: '100%' },
     
-    videoIndicator: { width: width, height: width, justifyContent: 'center', alignItems: 'center' },
-    videoText: { marginTop: 10, fontWeight: '500' },
+    viewShotContainerDynamic: { width: width, backgroundColor: 'transparent', overflow: 'hidden', justifyContent: 'center' },
+    
+    viewShotContainerVideo: { width: width, height: width, backgroundColor: 'transparent', overflow: 'hidden', justifyContent: 'center' },
+    
+    imageCanvas: { width: '100%', height: '100%' },
     
     editingOverlayDarken: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10 },
     
@@ -558,6 +551,6 @@ const localStyles = StyleSheet.create({
     dockBorder: { borderWidth: 1, elevation: 2 },
     dockLabel: { fontSize: 10, fontWeight: '600' },
     
-    submitActionBtn: { backgroundColor: Data.brand.blue || '#007AFF', marginLeft: 'auto', paddingHorizontal: 25, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+    submitActionBtn: { backgroundColor: Data.brand.blue || '#007AFF', marginLeft: 'auto', paddingHorizontal: 16, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
     submitActionText: { color: '#fff', fontWeight: 'bold', fontSize: 15 }
 });

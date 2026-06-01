@@ -1,32 +1,37 @@
 // client/src/components/SpeedDial.js
 // ⭐️ FINAL COMPLETE VERSION: Orange Glassy FAB + Full Menu Logic & Memoized Performance ⭐️
 // ⭐️ FULL DARK MODE COMPATIBLE ⭐️
+// ✅ v2: Added Vibe Camera + renamed labels to KliqTap language
 
 import React, { useEffect, useRef, memo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { brand } from '../constants/data';
-import { useAppStore } from '../store/useAppStore'; // ⭐️ משיכת הסטור
+import { useAppStore } from '../store/useAppStore';
 
 const ACTIONS = [
     { 
-        id: 'bot_studio', label: 'Bot Studio 🤖', icon: 'color-wand', 
+        id: 'bot_studio', label: 'kliq Studio 🤖', icon: 'color-wand', 
         color: '#4CAF50', bg: '#E8F5E9', actionProp: 'onOpenBotStudio' 
     },
     { 
-        id: 'ai', label: 'Ask AI Genius', icon: 'sparkles', 
+        id: 'ai', label: 'KliqMind AI 🛡️', icon: 'sparkles', 
         color: '#6200EE', bg: '#F3E5F5', actionProp: 'onOpenAI' 
     },
     { 
-        id: 'upload', label: 'Magic Multi-Post ✨', icon: 'rocket', 
+        id: 'camera', label: 'KliqCam 📸', icon: 'camera', 
+        color: '#FF2D55', bg: '#FFF0F3', actionProp: 'onOpenCamera' 
+    },
+    { 
+        id: 'upload', label: 'kliq Magic ✨', icon: 'rocket', 
         color: '#00BCD4', bg: '#E0F7FA', actionProp: 'onOpenFileUpload' 
     },
     { 
-        id: 'group', label: 'Create Community', icon: 'people', 
+        id: 'group', label: 'Kliq Tribe 🛖', icon: 'people', 
         color: '#FF9800', bg: '#FFF3E0', actionProp: 'onOpenGroup' 
     },
     { 
-        id: 'post', label: 'New Post', icon: 'create', 
+        id: 'post', label: 'Kliq Feed 🤍', icon: 'create', 
         color: '#2196F3', bg: '#E3F2FD', actionProp: 'onOpenPost' 
     },
 ];
@@ -34,11 +39,9 @@ const ACTIONS = [
 const SpeedDial = (props) => {
     const { isSpeedDialOpen, onToggleMenu } = props;
     
-    // ⭐️ זיהוי מצב לילה
     const userSettings = useAppStore(state => state.userSettings);
     const isDark = userSettings?.darkMode === true;
 
-    // Animation Values
     const animation = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
@@ -50,7 +53,6 @@ const SpeedDial = (props) => {
         }).start();
     }, [isSpeedDialOpen, animation]);
 
-    // Rotation Interpolation for Main Button
     const rotation = animation.interpolate({
         inputRange: [0, 1],
         outputRange: ['0deg', '45deg']
@@ -59,7 +61,6 @@ const SpeedDial = (props) => {
     return (
         <View style={localStyles.container} pointerEvents="box-none">
             
-            {/* --- EXPANDED MENU ITEMS (Pop Upwards) --- */}
             <View style={localStyles.menuWrapper} pointerEvents="box-none">
                 {ACTIONS.map((item, index) => {
                     const translateY = animation.interpolate({
@@ -105,7 +106,7 @@ const SpeedDial = (props) => {
                 })}
             </View>
 
-            {/* --- MAIN FAB BUTTON (ORANGE GLASS STYLE) --- */}
+            {/* --- MAIN FAB BUTTON --- */}
             <TouchableOpacity 
                 activeOpacity={0.9} 
                 onPress={onToggleMenu}

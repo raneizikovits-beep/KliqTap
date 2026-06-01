@@ -1,0 +1,429 @@
+diff --git a/node_modules/react-native-deepar/android/build.gradle b/node_modules/react-native-deepar/android/build.gradle
+index 77b67f6..e23b730 100644
+--- a/node_modules/react-native-deepar/android/build.gradle
++++ b/node_modules/react-native-deepar/android/build.gradle
+@@ -18,11 +18,11 @@ def safeExtGet(prop, fallback) {
+ }
+ 
+ android {
+-  compileSdkVersion safeExtGet('Deepar_compileSdkVersion', 29)
+-  buildToolsVersion safeExtGet('Deepar_buildToolsVersion', '29.0.2')
++  compileSdkVersion safeExtGet('Deepar_compileSdkVersion', 34)
++  buildToolsVersion safeExtGet('Deepar_buildToolsVersion', '34.0.0')
+   defaultConfig {
+     minSdkVersion safeExtGet('Deepar_minSdkVersion', 21)
+-    targetSdkVersion safeExtGet('Deepar_targetSdkVersion', 29)
++    targetSdkVersion safeExtGet('Deepar_targetSdkVersion', 34)
+     versionCode 1
+     versionName "1.0"
+   }
+diff --git a/node_modules/react-native-deepar/android/build/.transforms/e361a77e04c47c39c014f15331b41fd4/results.bin b/node_modules/react-native-deepar/android/build/.transforms/e361a77e04c47c39c014f15331b41fd4/results.bin
+new file mode 100644
+index 0000000..0d259dd
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/.transforms/e361a77e04c47c39c014f15331b41fd4/results.bin
+@@ -0,0 +1 @@
++o/classes
+diff --git a/node_modules/react-native-deepar/android/build/.transforms/e361a77e04c47c39c014f15331b41fd4/transformed/classes/classes_dex/classes.dex b/node_modules/react-native-deepar/android/build/.transforms/e361a77e04c47c39c014f15331b41fd4/transformed/classes/classes_dex/classes.dex
+new file mode 100644
+index 0000000..9ad8724
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/.transforms/e361a77e04c47c39c014f15331b41fd4/transformed/classes/classes_dex/classes.dex differ
+diff --git a/node_modules/react-native-deepar/android/build/generated/source/buildConfig/debug/com/reactnativedeepar/BuildConfig.java b/node_modules/react-native-deepar/android/build/generated/source/buildConfig/debug/com/reactnativedeepar/BuildConfig.java
+new file mode 100644
+index 0000000..d7b9ac7
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/generated/source/buildConfig/debug/com/reactnativedeepar/BuildConfig.java
+@@ -0,0 +1,10 @@
++/**
++ * Automatically generated file. DO NOT MODIFY
++ */
++package com.reactnativedeepar;
++
++public final class BuildConfig {
++  public static final boolean DEBUG = Boolean.parseBoolean("true");
++  public static final String LIBRARY_PACKAGE_NAME = "com.reactnativedeepar";
++  public static final String BUILD_TYPE = "debug";
++}
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml b/node_modules/react-native-deepar/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml
+new file mode 100644
+index 0000000..d758fb5
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="utf-8"?>
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="com.reactnativedeepar" >
++
++    <uses-sdk android:minSdkVersion="21" />
++
++    <uses-feature android:name="android.hardware.camera" />
++    <uses-feature android:name="android.hardware.camera.autofocus" />
++
++    <uses-permission android:name="android.permission.INTERNET" />
++    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
++    <uses-permission android:name="android.permission.CAMERA" />
++    <uses-permission android:name="android.hardware.camera.autofocus" />
++    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
++    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
++    <uses-permission android:name="android.permission.RECORD_AUDIO" />
++
++</manifest>
+\ No newline at end of file
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/output-metadata.json b/node_modules/react-native-deepar/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/output-metadata.json
+new file mode 100644
+index 0000000..4a73498
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/output-metadata.json
+@@ -0,0 +1,18 @@
++{
++  "version": 3,
++  "artifactType": {
++    "type": "AAPT_FRIENDLY_MERGED_MANIFESTS",
++    "kind": "Directory"
++  },
++  "applicationId": "com.reactnativedeepar",
++  "variantName": "debug",
++  "elements": [
++    {
++      "type": "SINGLE",
++      "filters": [],
++      "attributes": [],
++      "outputFile": "AndroidManifest.xml"
++    }
++  ],
++  "elementType": "File"
++}
+\ No newline at end of file
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties b/node_modules/react-native-deepar/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties
+new file mode 100644
+index 0000000..1211b1e
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties
+@@ -0,0 +1,6 @@
++aarFormatVersion=1.0
++aarMetadataVersion=1.0
++minCompileSdk=1
++minCompileSdkExtension=0
++minAndroidGradlePluginVersion=1.0.0
++coreLibraryDesugaringEnabled=false
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json b/node_modules/react-native-deepar/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json
+new file mode 100644
+index 0000000..9e26dfe
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json
+@@ -0,0 +1 @@
++{}
+\ No newline at end of file
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar b/node_modules/react-native-deepar/android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar
+new file mode 100644
+index 0000000..f00211a
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar b/node_modules/react-native-deepar/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar
+new file mode 100644
+index 0000000..352c051
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/compile_symbol_list/debug/generateDebugRFile/R.txt b/node_modules/react-native-deepar/android/build/intermediates/compile_symbol_list/debug/generateDebugRFile/R.txt
+new file mode 100644
+index 0000000..e7ba72d
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/compile_symbol_list/debug/generateDebugRFile/R.txt
+@@ -0,0 +1,2 @@
++int id surface 0x0
++int layout deeparview 0x0
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/compiled_local_resources/debug/compileDebugLibraryResources/out/layout_deeparview.xml.flat b/node_modules/react-native-deepar/android/build/intermediates/compiled_local_resources/debug/compileDebugLibraryResources/out/layout_deeparview.xml.flat
+new file mode 100644
+index 0000000..8230686
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/compiled_local_resources/debug/compileDebugLibraryResources/out/layout_deeparview.xml.flat differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties b/node_modules/react-native-deepar/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties
+new file mode 100644
+index 0000000..bdb7d21
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties
+@@ -0,0 +1,2 @@
++#Tue May 26 22:03:00 PST 2026
++com.reactnativedeepar.react-native-deepar-main-6\:/layout/deeparview.xml=C\:\\Users\\user\\KliqTap\\client\\node_modules\\react-native-deepar\\android\\build\\intermediates\\packaged_res\\debug\\packageDebugResources\\layout\\deeparview.xml
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/incremental/debug/packageDebugResources/merger.xml b/node_modules/react-native-deepar/android/build/intermediates/incremental/debug/packageDebugResources/merger.xml
+new file mode 100644
+index 0000000..e549ff3
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/incremental/debug/packageDebugResources/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="main$Generated" generated="true" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="main" generated-set="main$Generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\res"><file name="deeparview" path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\res\layout\deeparview.xml" qualifiers="" type="layout"/></source></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="debug$Generated" generated="true" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\debug\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="debug" generated-set="debug$Generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\debug\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="generated$Generated" generated="true" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\build\generated\res\resValues\debug"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="generated" generated-set="generated$Generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\build\generated\res\resValues\debug"/></dataSet><mergedItems/></merger>
+\ No newline at end of file
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/incremental/mergeDebugJniLibFolders/merger.xml b/node_modules/react-native-deepar/android/build/intermediates/incremental/mergeDebugJniLibFolders/merger.xml
+new file mode 100644
+index 0000000..1d741f4
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/incremental/mergeDebugJniLibFolders/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet config="main" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\jniLibs"/></dataSet><dataSet config="debug" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\debug\jniLibs"/></dataSet></merger>
+\ No newline at end of file
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/incremental/mergeDebugShaders/merger.xml b/node_modules/react-native-deepar/android/build/intermediates/incremental/mergeDebugShaders/merger.xml
+new file mode 100644
+index 0000000..a483946
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/incremental/mergeDebugShaders/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet config="main" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\shaders"/></dataSet><dataSet config="debug" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\debug\shaders"/></dataSet></merger>
+\ No newline at end of file
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/incremental/packageDebugAssets/merger.xml b/node_modules/react-native-deepar/android/build/intermediates/incremental/packageDebugAssets/merger.xml
+new file mode 100644
+index 0000000..bd5768b
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/incremental/packageDebugAssets/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet config="main" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\assets"/></dataSet><dataSet config="debug" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\debug\assets"/></dataSet><dataSet config="generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\build\intermediates\shader_assets\debug\compileDebugShaders\out"/></dataSet></merger>
+\ No newline at end of file
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/ARSurfaceProvider$1.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/ARSurfaceProvider$1.class
+new file mode 100644
+index 0000000..497f91b
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/ARSurfaceProvider$1.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/ARSurfaceProvider.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/ARSurfaceProvider.class
+new file mode 100644
+index 0000000..aaa9f38
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/ARSurfaceProvider.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/BuildConfig.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/BuildConfig.class
+new file mode 100644
+index 0000000..0892246
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/BuildConfig.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/CameraXHandler$1$1.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/CameraXHandler$1$1.class
+new file mode 100644
+index 0000000..aa0a2b7
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/CameraXHandler$1$1.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/CameraXHandler$1.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/CameraXHandler$1.class
+new file mode 100644
+index 0000000..d0fb00d
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/CameraXHandler$1.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/CameraXHandler.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/CameraXHandler.class
+new file mode 100644
+index 0000000..51433d1
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/CameraXHandler.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTCameraModule.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTCameraModule.class
+new file mode 100644
+index 0000000..1632dd8
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTCameraModule.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepAR$1.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepAR$1.class
+new file mode 100644
+index 0000000..050299a
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepAR$1.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepAR.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepAR.class
+new file mode 100644
+index 0000000..32a63f8
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepAR.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARPackage.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARPackage.class
+new file mode 100644
+index 0000000..f5f44b1
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARPackage.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARViewManager$1.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARViewManager$1.class
+new file mode 100644
+index 0000000..cae82d9
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARViewManager$1.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARViewManager$2.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARViewManager$2.class
+new file mode 100644
+index 0000000..e40dc2f
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARViewManager$2.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARViewManager.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARViewManager.class
+new file mode 100644
+index 0000000..6ddbc16
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/RNTDeepARViewManager.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/enums/CameraPositions.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/enums/CameraPositions.class
+new file mode 100644
+index 0000000..e5c37d4
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/enums/CameraPositions.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/enums/Methods.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/enums/Methods.class
+new file mode 100644
+index 0000000..509c480
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/enums/Methods.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/enums/TextureTypes.class b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/enums/TextureTypes.class
+new file mode 100644
+index 0000000..ed6b965
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactnativedeepar/enums/TextureTypes.class differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt b/node_modules/react-native-deepar/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt
+new file mode 100644
+index 0000000..86ce65c
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt
+@@ -0,0 +1,4 @@
++R_DEF: Internal format may change without notice
++local
++id surface
++layout deeparview
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/manifest_merge_blame_file/debug/processDebugManifest/manifest-merger-blame-debug-report.txt b/node_modules/react-native-deepar/android/build/intermediates/manifest_merge_blame_file/debug/processDebugManifest/manifest-merger-blame-debug-report.txt
+new file mode 100644
+index 0000000..3cf0203
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/manifest_merge_blame_file/debug/processDebugManifest/manifest-merger-blame-debug-report.txt
+@@ -0,0 +1,36 @@
++1<?xml version="1.0" encoding="utf-8"?>
++2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++3    package="com.reactnativedeepar" >
++4
++5    <uses-sdk android:minSdkVersion="21" />
++6
++7    <uses-feature android:name="android.hardware.camera" />
++7-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:5:3-57
++7-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:5:17-55
++8    <uses-feature android:name="android.hardware.camera.autofocus" />
++8-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:6:3-67
++8-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:6:17-65
++9
++10    <uses-permission android:name="android.permission.INTERNET" />
++10-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:8:3-64
++10-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:8:20-62
++11    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
++11-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:9:3-75
++11-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:9:20-73
++12    <uses-permission android:name="android.permission.CAMERA" />
++12-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:11:3-62
++12-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:11:20-60
++13    <uses-permission android:name="android.hardware.camera.autofocus" />
++13-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:12:3-70
++13-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:12:20-68
++14    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
++14-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:13:3-77
++14-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:13:20-75
++15    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
++15-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:14:3-78
++15-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:14:20-76
++16    <uses-permission android:name="android.permission.RECORD_AUDIO" />
++16-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:15:3-68
++16-->C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:15:20-66
++17
++18</manifest>
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/merged_manifest/debug/processDebugManifest/AndroidManifest.xml b/node_modules/react-native-deepar/android/build/intermediates/merged_manifest/debug/processDebugManifest/AndroidManifest.xml
+new file mode 100644
+index 0000000..d758fb5
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/merged_manifest/debug/processDebugManifest/AndroidManifest.xml
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="utf-8"?>
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="com.reactnativedeepar" >
++
++    <uses-sdk android:minSdkVersion="21" />
++
++    <uses-feature android:name="android.hardware.camera" />
++    <uses-feature android:name="android.hardware.camera.autofocus" />
++
++    <uses-permission android:name="android.permission.INTERNET" />
++    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
++    <uses-permission android:name="android.permission.CAMERA" />
++    <uses-permission android:name="android.hardware.camera.autofocus" />
++    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
++    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
++    <uses-permission android:name="android.permission.RECORD_AUDIO" />
++
++</manifest>
+\ No newline at end of file
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/navigation_json/debug/extractDeepLinksDebug/navigation.json b/node_modules/react-native-deepar/android/build/intermediates/navigation_json/debug/extractDeepLinksDebug/navigation.json
+new file mode 100644
+index 0000000..0637a08
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/navigation_json/debug/extractDeepLinksDebug/navigation.json
+@@ -0,0 +1 @@
++[]
+\ No newline at end of file
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/nested_resources_validation_report/debug/generateDebugResources/nestedResourcesValidationReport.txt b/node_modules/react-native-deepar/android/build/intermediates/nested_resources_validation_report/debug/generateDebugResources/nestedResourcesValidationReport.txt
+new file mode 100644
+index 0000000..08f4ebe
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/nested_resources_validation_report/debug/generateDebugResources/nestedResourcesValidationReport.txt
+@@ -0,0 +1 @@
++0 Warning/Error
+\ No newline at end of file
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/packaged_res/debug/packageDebugResources/layout/deeparview.xml b/node_modules/react-native-deepar/android/build/intermediates/packaged_res/debug/packageDebugResources/layout/deeparview.xml
+new file mode 100644
+index 0000000..3d29a44
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/packaged_res/debug/packageDebugResources/layout/deeparview.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    android:layout_width="match_parent" android:layout_height="match_parent">
++
++    <SurfaceView
++        android:id="@+id/surface"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent" />
++
++</FrameLayout>
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/runtime_library_classes_jar/debug/bundleLibRuntimeToJarDebug/classes.jar b/node_modules/react-native-deepar/android/build/intermediates/runtime_library_classes_jar/debug/bundleLibRuntimeToJarDebug/classes.jar
+new file mode 100644
+index 0000000..bf7743d
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/intermediates/runtime_library_classes_jar/debug/bundleLibRuntimeToJarDebug/classes.jar differ
+diff --git a/node_modules/react-native-deepar/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt b/node_modules/react-native-deepar/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt
+new file mode 100644
+index 0000000..fdea021
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt
+@@ -0,0 +1,3 @@
++com.reactnativedeepar
++id surface
++layout deeparview
+diff --git a/node_modules/react-native-deepar/android/build/outputs/logs/manifest-merger-debug-report.txt b/node_modules/react-native-deepar/android/build/outputs/logs/manifest-merger-debug-report.txt
+new file mode 100644
+index 0000000..5aaa23b
+--- /dev/null
++++ b/node_modules/react-native-deepar/android/build/outputs/logs/manifest-merger-debug-report.txt
+@@ -0,0 +1,53 @@
++-- Merging decision tree log ---
++manifest
++ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:1:1-17:12
++INJECTED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:1:1-17:12
++	package
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:3:5-36
++		INJECTED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml
++	xmlns:android
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:2:5-63
++uses-feature#android.hardware.camera
++ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:5:3-57
++	android:name
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:5:17-55
++uses-feature#android.hardware.camera.autofocus
++ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:6:3-67
++	android:name
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:6:17-65
++uses-permission#android.permission.INTERNET
++ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:8:3-64
++	android:name
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:8:20-62
++uses-permission#android.permission.SYSTEM_ALERT_WINDOW
++ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:9:3-75
++	android:name
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:9:20-73
++uses-permission#android.permission.CAMERA
++ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:11:3-62
++	android:name
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:11:20-60
++uses-permission#android.hardware.camera.autofocus
++ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:12:3-70
++	android:name
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:12:20-68
++uses-permission#android.permission.READ_EXTERNAL_STORAGE
++ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:13:3-77
++	android:name
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:13:20-75
++uses-permission#android.permission.WRITE_EXTERNAL_STORAGE
++ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:14:3-78
++	android:name
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:14:20-76
++uses-permission#android.permission.RECORD_AUDIO
++ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:15:3-68
++	android:name
++		ADDED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml:15:20-66
++uses-sdk
++INJECTED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml reason: use-sdk injection requested
++INJECTED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml
++INJECTED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml
++	android:targetSdkVersion
++		INJECTED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml
++	android:minSdkVersion
++		INJECTED from C:\Users\user\KliqTap\client\node_modules\react-native-deepar\android\src\main\AndroidManifest.xml
+diff --git a/node_modules/react-native-deepar/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin b/node_modules/react-native-deepar/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin
+new file mode 100644
+index 0000000..d2c56aa
+Binary files /dev/null and b/node_modules/react-native-deepar/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin differ

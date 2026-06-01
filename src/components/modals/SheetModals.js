@@ -1,14 +1,5 @@
 // client/src/components/modals/SheetModals.js
-// ⭐️ V2 PRODUCTION: postId Backward Compat + All Original Functions Preserved
-//
-// CRITICAL FIX IN THIS VERSION:
-// [FIX-1] ThirdSheet routed CommentsView using `sheet.body` as postId, while
-//         SecondSheet routed it via `sheet.postId`. Inconsistent naming meant
-//         updating one call site could silently break the other.
-//         Now: both paths accept either `sheet.postId` (preferred) OR
-//         `sheet.body` (legacy) — fully backward compatible.
-//
-// All other behaviors preserved 100%.
+// ⭐️ V3.2 PRODUCTION: INTEGRATED GENUINE GROUP DETAILS SHEET + AUTOMATIC TREND ROUTER ⭐️
 
 import React, { useState, useEffect } from 'react';
 import { 
@@ -27,227 +18,59 @@ import BotStudioScreen from '../../screens/BotStudioScreen';
 import BaseSheet from './BaseSheet';
 import { SettingItem, GridItem } from './SheetComponents';
 import { PulseCreationOptionsView, TrendOptionsView, CommentsView, LocationPickerView } from './SheetViews';
-import EditProfileView from '../EditProfileView';
-import GroupDetailsSheet from '../GroupDetailsSheet'; 
-import { LeaderboardModal } from './LeaderboardModal'; 
+
+// ⭐️ KLIQMIND FIX: יבוא של קובץ הקבוצות האמיתי והמעוצב שלך ומחיקת הכפילות הישנה ⭐️
+import GroupDetailsSheet from '../GroupDetailsSheet';
+
+// ייבוא 10 חדרים הטרנדים החדשים
+import { KaraokeRoom } from './KaraokeRoom';
+import { DanceChallenge } from './DanceChallenge';
+import { PhotoStudio } from './PhotoStudio';
+import { VoiceClip } from './VoiceClip';
+import { VideoLab } from './VideoLab';
+import { StoryComposer } from './StoryComposer';
+import { TopicChat } from './TopicChat'; 
+import { LiveRoom } from './LiveRoom'; 
+import { PollVote } from './PollVote'; 
+import { DuetCompose } from './DuetCompose';
 
 const { width } = Dimensions.get('window');
-const SUPPORT_SUB_PAGES = ['SupportPro', 'SupportPeers', 'SupportCrisis', 'SupportTools', 'SupportAnxiety', 'SupportDepression', 'SupportSleep'];
 
-// --- AI INSIGHTS INTERNAL VIEW ---
-const AiRecommendationsView = ({ recommendations, onClose, setSecondSheet, setPulseCreateOpen, isDark }) => {
+const TrendPlaceholderView = ({ title, subtitle, icon, color, isDark, onClose, openVoiceCall, openVideoCall, openVibeCheck }) => {
     return (
-        <View style={[localStyles.aiInternalContainer, { backgroundColor: isDark ? '#000' : '#F8F9FA' }]}>
-            <View style={localStyles.aiHeader}>
-                <View style={localStyles.aiBadge}>
-                    <Ionicons name="sparkles" size={14} color="#6200EE" />
-                    <Text style={localStyles.aiBadgeText}>KLIQMIND AI ENGINE</Text>
-                </View>
-                <Text style={[localStyles.aiMainTitle, { color: isDark ? '#fff' : '#000' }]}>AI Suggestions</Text>
-                <Text style={[localStyles.aiMainSub, { color: isDark ? '#888' : '#666' }]}>
-                    Insights analyzed from your current vibe and activity.
-                </Text>
+        <View style={{ padding: 24, alignItems: 'center', backgroundColor: isDark ? '#1C1C1E' : '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 }}>
+            <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: color + '20', justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
+                <Ionicons name={icon} size={40} color={color} />
             </View>
-
-            <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-                
-                {/* KLIQMIND ORACLE */}
-                <Text style={[localStyles.sectionTitle, { color: isDark ? '#fff' : '#333' }]}>KLIQMIND ORACLE</Text>
-                <View style={[localStyles.oracleContainer, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#333' : '#eee' }]}>
-                    <Ionicons name="search" size={20} color={isDark ? '#888' : '#999'} style={{marginLeft: 15}} />
-                    <TextInput
-                        style={[localStyles.oracleInput, { color: isDark ? '#fff' : '#000' }]}
-                        placeholder="What's on your mind? Ask the Oracle..."
-                        placeholderTextColor={isDark ? '#888' : '#999'}
-                        onSubmitEditing={() => Alert.alert("🧠 KliqMind Oracle", "Query received. Synthesizing answer and drafting Pulse...")}
-                    />
-                    <TouchableOpacity style={localStyles.oracleBtn} onPress={() => Alert.alert("🧠 Oracle", "Connecting to KliqMind core...")}>
-                        <Ionicons name="send" size={14} color="#fff" style={{marginLeft: 2}} />
+            <Text style={{ fontSize: 24, fontWeight: '900', color: isDark ? '#fff' : '#000', marginBottom: 8 }}>{title}</Text>
+            <Text style={{ fontSize: 16, color: isDark ? '#aaa' : '#555', textAlign: 'center', marginBottom: 30 }}>{subtitle}</Text>
+            
+            <View style={{ flexDirection: 'row', gap: 12, width: '100%', justifyContent: 'center' }}>
+                {openVibeCheck && (
+                    <TouchableOpacity onPress={() => { onClose(); setTimeout(() => openVibeCheck(), 300); }} style={{ flex: 1, backgroundColor: color, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Open Camera</Text>
                     </TouchableOpacity>
-                </View>
-
-                {/* AI TOOLBOX */}
-                <Text style={[localStyles.sectionTitle, { color: isDark ? '#fff' : '#333', marginTop: 25 }]}>AI TOOLBOX</Text>
-                
-                <View style={localStyles.toolboxGrid}>
-                    <View style={localStyles.toolboxRow}>
-                        <TouchableOpacity 
-                            style={[localStyles.toolChip, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: 'rgba(255, 0, 127, 0.4)' }]}
-                            onPress={() => { onClose(); setTimeout(() => Alert.alert("🔮 Vibe Translator", "Enter 2 words, get a viral post. AI Engine hooking up..."), 350); }}
-                        >
-                            <LinearGradient colors={['#FF007F', '#7928CA']} style={localStyles.toolGradient} />
-                            <Ionicons name="color-wand" size={26} color="#fff" />
-                            <Text style={localStyles.toolText}>Vibe Translator</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity 
-                            style={[localStyles.toolChip, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: 'rgba(0, 229, 255, 0.4)' }]}
-                            onPress={() => { onClose(); setTimeout(() => Alert.alert("📡 Network Scanner", "KliqMind Analyst says:\n\n'High engagement on nightlife posts in Cebu right now. Upload a photo from the club.'"), 350); }}
-                        >
-                            <LinearGradient colors={['#00E5FF', '#007AFF']} style={localStyles.toolGradient} />
-                            <Ionicons name="scan" size={26} color="#fff" />
-                            <Text style={localStyles.toolText}>Network Scanner</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <TouchableOpacity 
-                        style={[localStyles.toolChip, { width: '100%', marginTop: 12, height: 75, flexDirection: 'row', paddingHorizontal: 20, justifyContent: 'flex-start', borderColor: 'rgba(255, 215, 0, 0.4)' }]}
-                        onPress={() => { onClose(); setTimeout(() => Alert.alert("🪽 Auto-Wingman", "Scanning your network for viral posts...\n\nDrafting 3 witty replies for you to choose from."), 350); }}
-                    >
-                        <LinearGradient colors={['#FFD700', '#FF8C00']} style={localStyles.toolGradient} start={{x: 0, y: 0}} end={{x: 1, y: 0}} />
-                        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 15 }}>
-                            <Ionicons name="rocket" size={22} color="#fff" />
-                        </View>
-                        <View>
-                            <Text style={[localStyles.toolText, { marginTop: 0, fontSize: 16, textAlign: 'left' }]}>Auto-Wingman</Text>
-                            <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 2, fontWeight: '600' }}>Auto-reply to viral network posts</Text>
-                        </View>
-                    </TouchableOpacity>
-                </View>
-
-                <Text style={[localStyles.sectionTitle, { color: isDark ? '#fff' : '#333', marginTop: 30 }]}>TOP MATCHES</Text>
-                {recommendations && recommendations.length > 0 ? (
-                    recommendations.map((item, index) => (
-                        <TouchableOpacity 
-                            key={index}
-                            style={[localStyles.recommendationCard, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#333' : '#eee' }]}
-                        >
-                            <Image source={{ uri: item.avatarUrl || item.img || 'https://via.placeholder.com/50' }} style={localStyles.recAvatar} />
-                            <View style={{ flex: 1 }}>
-                                <Text style={[localStyles.recName, { color: isDark ? '#fff' : '#000' }]}>{item.title || item.name || 'User'}</Text>
-                                <Text style={localStyles.recMatch}>{item.body || 'Shared vibe and interests'}</Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={16} color={isDark ? '#444' : '#ccc'} />
-                        </TouchableOpacity>
-                    ))
-                ) : (
-                    <View style={localStyles.emptyContainer}>
-                        <ActivityIndicator size="large" color="#6200EE" />
-                        <Text style={[localStyles.emptyText, { color: isDark ? '#aaa' : '#666' }]}>Analyzing new insights...</Text>
-                    </View>
                 )}
-            </ScrollView>
-        </View>
-    );
-};
-
-// --- SettingsSubContent (Dark Mode preserved) ---
-const SettingsSubContent = ({ source, title, user, onClose, isDark }) => { 
-    const [email, setEmail] = useState(user?.email || '');
-    const [phone, setPhone] = useState(user?.phone || '');
-    const [password, setPassword] = useState('');
-    const [twoFactor, setTwoFactor] = useState(false);
-    
-    const [blockedUsers, setBlockedUsers] = useState([
-        { id: 1, name: "Spam Bot 3000", handle: "@spambot" },
-        { id: 2, name: "Mean User", handle: "@meanuser" }
-    ]);
-
-    const handleSave = () => {
-        Alert.alert("Success", "Changes saved successfully.");
-        onClose();
-    };
-
-    const textColor = isDark ? '#fff' : '#333';
-    const subTextColor = isDark ? '#aaa' : '#666';
-    const inputBg = isDark ? '#000' : '#f5f5f5'; 
-    const cardBg = isDark ? '#000' : '#f9f9f9';
-    const borderColor = isDark ? '#333' : '#eee';
-    const mainBg = isDark ? '#1C1C1E' : '#fff'; 
-
-    if (title === 'Personal Info' || title === 'Edit Profile') {
-        return (
-            <ScrollView style={[localStyles.scrollContainer, { backgroundColor: mainBg }]} keyboardShouldPersistTaps="handled">
-                <Text style={[localStyles.label, {color: subTextColor}]}>Display Name</Text>
-                <TextInput style={[localStyles.input, {backgroundColor: inputBg, color: textColor, borderColor: borderColor, borderWidth: 1}]} value={user?.name} editable={false} />
-                <Text style={[localStyles.label, {color: subTextColor}]}>Email Address</Text>
-                <TextInput style={[localStyles.input, {backgroundColor: inputBg, color: textColor, borderColor: borderColor, borderWidth: 1}]} value={email} onChangeText={setEmail} keyboardType="email-address" />
-                <Text style={[localStyles.label, {color: subTextColor}]}>Phone Number</Text>
-                <TextInput style={[localStyles.input, {backgroundColor: inputBg, color: textColor, borderColor: borderColor, borderWidth: 1}]} value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+1..." placeholderTextColor={subTextColor}/>
-                <TouchableOpacity style={localStyles.saveBtn} onPress={handleSave}><Text style={localStyles.saveBtnText}>Save Changes</Text></TouchableOpacity>
-            </ScrollView>
-        );
-    }
-
-    if (title === 'Security' || source === 'Security') {
-        return (
-            <ScrollView style={[localStyles.scrollContainer, { backgroundColor: mainBg }]} keyboardShouldPersistTaps="handled">
-                <View style={[localStyles.card, {backgroundColor: cardBg, borderColor: borderColor}]}>
-                    <Text style={[localStyles.cardHeader, {color: textColor}]}>Change Password</Text>
-                    <TextInput style={[localStyles.input, {backgroundColor: inputBg, color: textColor, borderColor: borderColor, borderWidth: 1, marginBottom: 10}]} placeholder="Current Password" placeholderTextColor={subTextColor} secureTextEntry />
-                    <TextInput style={[localStyles.input, {backgroundColor: inputBg, color: textColor, borderColor: borderColor, borderWidth: 1}]} placeholder="New Password" placeholderTextColor={subTextColor} secureTextEntry value={password} onChangeText={setPassword} />
-                </View>
-                <View style={[localStyles.card, localStyles.twoFactorRow, {backgroundColor: cardBg, borderColor: borderColor}]}>
-                    <View><Text style={[localStyles.twoFactorTitle, {color: textColor}]}>Two-Factor Auth</Text><Text style={[localStyles.twoFactorSub, {color: subTextColor}]}>Secure your account</Text></View>
-                    <Switch value={twoFactor} onValueChange={setTwoFactor} trackColor={{true: brand.green}} />
-                </View>
-                <TouchableOpacity style={localStyles.saveBtn} onPress={handleSave}><Text style={localStyles.saveBtnText}>Update Security</Text></TouchableOpacity>
-            </ScrollView>
-        );
-    }
-
-    if (title === 'Linked Accounts') {
-        return (
-            <View style={[localStyles.scrollContainer, { backgroundColor: mainBg, flex: 1 }]}>
-                {['Google', 'Facebook', 'Apple'].map((provider, i) => (
-                    <View key={i} style={[localStyles.rowItem, {borderBottomColor: borderColor}]}>
-                        <View style={localStyles.providerInfo}><Ionicons name={`logo-${provider.toLowerCase()}`} size={24} color={isDark ? '#ccc' : "#555"} /><Text style={[localStyles.providerName, {color: textColor}]}>{provider}</Text></View>
-                        <TouchableOpacity onPress={() => Alert.alert(provider, "Toggle connection...")}><Text style={localStyles.connectText}>Connect</Text></TouchableOpacity>
-                    </View>
-                ))}
-            </View>
-        );
-    }
-
-    if (title === 'Blocked Users') {
-        return (
-            <ScrollView style={[localStyles.scrollContainer, { backgroundColor: mainBg }]}>
-                <Text style={[localStyles.blockedHelper, {color: subTextColor}]}>People you've blocked can't see your profile or posts.</Text>
-                {blockedUsers.map(u => (
-                    <View key={String(u.id)} style={[localStyles.rowItem, {borderBottomColor: borderColor}]}>
-                        <View><Text style={[localStyles.blockedName, {color: textColor}]}>{u.name}</Text><Text style={[localStyles.blockedHandle, {color: subTextColor}]}>{u.handle}</Text></View>
-                        <TouchableOpacity 
-                            style={[localStyles.unblockBtn, {backgroundColor: isDark ? '#333' : '#eee'}]}
-                            onPress={() => {
-                                setBlockedUsers(blockedUsers.filter(user => String(user.id) !== String(u.id)));
-                                Alert.alert("Unblocked", `${u.name} can now see you.`);
-                            }}
-                        >
-                            <Text style={[localStyles.unblockText, {color: textColor}]}>Unblock</Text>
-                        </TouchableOpacity>
-                    </View>
-                ))}
-            </ScrollView>
-        );
-    }
-
-    if (title === 'Close Friends' || title === 'Hidden Accounts' || title === 'AI Persona') {
-         return <View style={[localStyles.scrollContainer, { backgroundColor: mainBg, flex: 1 }]}><Text style={[globalStyles.p, {color: subTextColor, textAlign: 'center', marginTop: 20}]}>Management section ready.</Text></View>;
-    }
-
-    if (title === 'Language') {
-        return (
-            <View style={[localStyles.scrollContainer, { backgroundColor: mainBg, flex: 1 }]}>
-                {['English (US)', 'Hebrew (עברית)', 'Spanish', 'French'].map((lang, i) => (
-                    <TouchableOpacity key={i} style={[localStyles.rowItem, {borderBottomColor: borderColor}]} onPress={() => Alert.alert("Language", "App restart required.")}>
-                        <Text style={[localStyles.langText, {color: textColor}]}>{lang}</Text>
-                        {i === 0 && <Ionicons name="checkmark" size={20} color={brand.blue} />}
+                {openVoiceCall && !openVibeCheck && (
+                    <TouchableOpacity onPress={() => { onClose(); setTimeout(() => openVoiceCall('trend_voice'), 300); }} style={{ flex: 1, backgroundColor: color, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Join Voice</Text>
                     </TouchableOpacity>
-                ))}
+                )}
+                 {openVideoCall && !openVibeCheck && !openVoiceCall && (
+                    <TouchableOpacity onPress={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }} style={{ flex: 1, backgroundColor: color, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Join Video</Text>
+                    </TouchableOpacity>
+                )}
+                {!openVibeCheck && !openVoiceCall && !openVideoCall && (
+                    <TouchableOpacity onPress={onClose} style={{ flex: 1, backgroundColor: color, paddingVertical: 14, borderRadius: 16, alignItems: 'center' }}>
+                        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Let's Go!</Text>
+                    </TouchableOpacity>
+                )}
             </View>
-        );
-    }
-
-    return (
-        <View style={[localStyles.fallbackContainer, { backgroundColor: mainBg, flex: 1 }]}>
-            <Ionicons name="information-circle-outline" size={50} color={isDark ? '#444' : "#ddd"} />
-            <Text style={[globalStyles.h3, localStyles.fallbackTitle, {color: textColor}]}>{title}</Text>
-            <Text style={[globalStyles.p, localStyles.fallbackSub, {color: subTextColor}]}>{source === 'AI_REC_INFO' ? "AI Insights Details" : "Settings page ready."}</Text>
         </View>
     );
 };
 
-// --- SecondSheet ---
 export const SecondSheet = ({ 
     sheet, onClose, onThird, onFourth, onFifth, 
     onDeepLink, getSettingsItems, getSearchItems, getIconGrid, 
@@ -267,18 +90,43 @@ export const SecondSheet = ({
     if (!sheet) return null;
 
     const handleNavigation = (item) => {
-        if (item.next === 'ProfilePeek') { onClose(); if (setProfilePeek) setProfilePeek(item.data); return; }
-        if (item.next === 'GroupDetails') { if (setSecondSheet) setSecondSheet({ source: 'GroupDetails', group: item.data }); return; }
-        if (item.next === 'PostView') { onThird({ title: 'Post', body: item.data.text }); return; }
-        if (item.title === 'Edit Profile') { if (setSecondSheet) setSecondSheet({ source: "EditProfile" }); return; }
-        else if (item.actionType === 'openVibeCheck' && openVibeCheck) { onClose(); openVibeCheck(); }
-        else if (item.actionType === 'openDeletionLink' && openDeletionLink) { onClose(); openDeletionLink(); }
-        else if (item.next) {
-            const [sheetType, deepAction] = item.next.split(':');
-            const sheetData = { source: item.title, title: item.title, body: item.body, deepAction, item }; 
-            if (sheetType === 'third') onThird(sheetData);
-            else if (sheetType === 'fourth') onFourth(sheetData);
-            else if (sheetType === 'fifth') onFifth({ ...sheetData, title: item.title, onDeepLink });
+        if (item.next === 'ProfilePeek') { onClose(); setTimeout(() => setProfilePeek({ userId: item.userId || 'demo1' }), 300); return; }
+        if (item.next === 'Browser' && item.url) { onClose(); setTimeout(() => onDeepLink(item.url), 300); return; }
+        if (item.next === 'SupportPage') { setSecondSheet({ source: 'Support' }); return; }
+        if (item.next === 'CreateTicket') { setSecondSheet({ source: 'CreateTicket' }); return; }
+        if (item.next === 'TicketDetails') { setSecondSheet({ source: 'TicketDetails', ticket: item }); return; }
+        if (item.next === 'ChatScreen') { onClose(); setTimeout(() => { alert(`Opening chat for ticket #${item.id}`); }, 300); return; }
+        if (item.next === 'AccountDeletion') { onClose(); setTimeout(() => openDeletionLink(), 300); return; }
+
+        const sheetData = { source: item.next, title: item.title, items: item.items || [] };
+        if (sheet.source === 'Settings' || sheet.source === 'Search') {
+            onThird({ ...sheetData, onDeepLink });
+        } else {
+            setCurrentView(item.next);
+        }
+    };
+
+    const SUPPORT_SUB_PAGES = ['CreateTicket', 'TicketDetails'];
+
+    const handleThirdTransition = (item) => {
+        if (item.next === 'ProfilePeek') { onClose(); setTimeout(() => setProfilePeek({ userId: item.userId || 'demo1' }), 300); return; }
+        if (item.next === 'Browser' && item.url) { onClose(); setTimeout(() => onDeepLink(item.url), 300); return; }
+        const sheetData = { source: item.next, title: item.title, items: item.items || [] };
+        if (sheet.source === 'Settings' || sheet.source === 'Search') {
+            if (onFourth) onFourth({ ...sheetData, onDeepLink });
+        } else {
+            if (onThird) onThird({ ...sheetData, onDeepLink });
+        }
+    };
+
+    const handleFourthTransition = (item) => {
+        if (item.next === 'ProfilePeek') { onClose(); setTimeout(() => setProfilePeek({ userId: item.userId || 'demo1' }), 300); return; }
+        if (item.next === 'Browser' && item.url) { onClose(); setTimeout(() => onDeepLink(item.url), 300); return; }
+        const sheetData = { source: item.next, title: item.title, items: item.items || [] };
+        if (sheet.source === 'Settings' || sheet.source === 'Search') {
+            if (onFifth) onFifth({ ...sheetData, title: item.title, onDeepLink });
+        } else {
+            if (onFourth) onFourth({ ...sheetData, title: item.title, onDeepLink });
         }
     };
 
@@ -326,9 +174,37 @@ export const SecondSheet = ({
             return <AiRecommendationsView recommendations={sheet.recommendations} onClose={onClose} setSecondSheet={setSecondSheet} setPulseCreateOpen={setPulseCreateOpen} isDark={isDark} />;
         }
 
-        if (sheet.source === 'TrendOptions') return <TrendOptionsView trendName={sheet.trend || '#Trend'} onClose={onClose} openVibeCheck={openVibeCheck} openVoiceCall={openVoiceCall} />;
+        let finalSource = sheet.source;
+        if (sheet.kind) finalSource = sheet.kind;
+
+        const rawTag = sheet.trend || sheet.title || '';
+        const cleanTag = rawTag.replace('#', '').trim();
+
+        if (cleanTag === 'SingForKliq') finalSource = 'KaraokeRoom';
+        else if (cleanTag === 'CebuDanceOff') finalSource = 'DanceChallenge';
+        else if (cleanTag === 'MorningVibe') finalSource = 'PhotoStudio';
+        else if (cleanTag === 'VoiceThoughts') finalSource = 'VoiceClip';
+        else if (cleanTag === 'VideoViral') finalSource = 'VideoLab';
+        else if (cleanTag === 'LifeStories') finalSource = 'StoryComposer';
+        else if (cleanTag === 'TechDebate') finalSource = 'TopicChat';
+        else if (cleanTag === 'LiveStreamKliq') finalSource = 'LiveRoom';
+        else if (cleanTag === 'KliqPoll') finalSource = 'PollVote';
+        else if (cleanTag === 'DuetChallenge') finalSource = 'DuetCompose';
+
+        if (finalSource === 'KaraokeRoom') return <KaraokeRoom sheet={sheet} onClose={onClose} isDark={isDark} />;
+        if (finalSource === 'DanceChallenge') return <DanceChallenge sheet={sheet} onClose={onClose} isDark={isDark} />;
+        if (finalSource === 'PhotoStudio') return <PhotoStudio sheet={sheet} onClose={onClose} isDark={isDark} />;
+        if (finalSource === 'VoiceClip') return <VoiceClip sheet={sheet} onClose={onClose} isDark={isDark} />;
+        if (finalSource === 'VideoLab') return <VideoLab sheet={sheet} onClose={onClose} isDark={isDark} />;
+        if (finalSource === 'StoryComposer') return <StoryComposer sheet={sheet} onClose={onClose} isDark={isDark} />;
+        if (finalSource === 'TopicChat') return <TopicChat sheet={sheet} onClose={onClose} isDark={isDark} />;
+        if (finalSource === 'LiveRoom') return <LiveRoom sheet={sheet} onClose={onClose} isDark={isDark} />;
+        if (finalSource === 'PollVote') return <PollVote sheet={sheet} onClose={onClose} isDark={isDark} />;
+        if (finalSource === 'DuetCompose') return <DuetCompose sheet={sheet} onClose={onClose} isDark={isDark} />;
+
+        if (finalSource === 'TrendOptions') return <TrendOptionsView trendName={sheet.trend || '#Trend'} onClose={onClose} openVibeCheck={openVibeCheck} openVoiceCall={openVoiceCall} />;
+
         if (sheet.source === 'CreatePulseOptions') return <PulseCreationOptionsView onClose={onClose} openVibeCheck={openVibeCheck} onStartImageUpload={onStartImageUpload} />;
-        // [FIX-1] Accept either postId (preferred) or body (legacy) for backward compat
         if (sheet.source === 'PostComments') return <CommentsView postId={sheet.postId || sheet.body} />;
 
         if (sheet.source === 'CreateTicket') {
@@ -349,118 +225,368 @@ export const SecondSheet = ({
         }
 
         if (sheet.source === 'TicketDetails') {
-            return <View style={{ padding: 20 }}><Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#000' }]}>{sheet.ticket?.subject || "Ticket"}</Text><Text style={[globalStyles.p, { color: isDark ? '#ccc' : '#333' }]}>{sheet.ticket?.messages?.[0]?.text || "No details provided."}</Text></View>;
+            const ticket = sheet.ticket;
+            return (
+                <View style={{ padding: 20 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                        <Text style={[globalStyles.h2, { color: isDark ? '#000' : '#000' }]}>{ticket.subject}</Text>
+                        <View style={[localStyles.statusBadge, { backgroundColor: ticket.status === 'Open' ? '#e3f2fd' : '#e8f5e9' }]}><Text style={[localStyles.statusText, { color: ticket.status === 'Open' ? '#1565c0' : '#2e7d32' }]}>{ticket.status}</Text></View>
+                    </View>
+                    <Text style={[globalStyles.p, { color: isDark ? '#ccc' : '#555', marginBottom: 20 }]}>{ticket.message}</Text>
+                    <View style={localStyles.ticketMeta}><Text style={localStyles.metaText}>Ticket #{ticket.id.substring(0,8)} • {new Date(ticket.created_at).toLocaleDateString()}</Text></View>
+                    {ticket.status === 'Open' && <TouchableOpacity style={localStyles.chatBtn} onPress={() => handleNavigation({ next: 'ChatScreen', id: ticket.id })}><Ionicons name="chatbubbles" size={20} color="#fff" /><Text style={localStyles.chatBtnText}>Chat with Support</Text></TouchableOpacity>}
+                </View>
+            );
         }
 
-        if (SUPPORT_SUB_PAGES.includes(sheet.source) || sheet.source === 'SettingsGeneric') {
+        if (sheet.source === 'SettingsGeneric') {
             const items = sheet.source === 'SettingsGeneric' ? getSettingsItems() : getSearchItems(sheet.source); 
-            const gridItems = getIconGrid ? getIconGrid(sheet.source) : null;
             return (
                 <View style={localStyles.scrollContainer}>
-                    {items?.map((item, i) => <SettingItem key={i} icon={item.icon} title={item.title} body={item.body} onPress={() => handleNavigation(item)} isDark={isDark} />)}
-                    {gridItems && <View style={localStyles.gridWrap}>{gridItems.map((item, i) => <GridItem key={i} icon={item.i} title={item.t} body={item.body} onPress={() => onThird({ source: item.t, body: item.body })} isDark={isDark} />)}</View>}
+                    <Text style={[globalStyles.h2, localStyles.bottomTitle, { color: isDark ? '#fff' : '#000' }]}>{title}</Text>
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                        <View style={{ paddingBottom: 40 }}>
+                            {items.map((item, i) => <SettingItem key={i} item={item} onPress={() => handleNavigation(item)} isDark={isDark} />)}
+                        </View>
+                    </ScrollView>
                 </View>
             );
         }
 
         if (sheet.source === 'AI_REC_INFO') return <View style={localStyles.scrollContainer}><Text style={[globalStyles.h2, localStyles.aiTitle, { color: isDark ? '#fff' : '#000' }]}>{sheet.title}</Text><Text style={[globalStyles.p, { color: isDark ? '#ccc' : '#333' }]}>{sheet.body}</Text></View>;
-
-        return <Text style={[globalStyles.p, localStyles.scrollContainer, { color: isDark ? '#fff' : '#000' }]}>Content source '{sheet.source}' ready.</Text>;
+        
+        const items = sheet.items || [];
+        const isGrid = currentView === 'Plus';
+        return (
+            <View style={localStyles.scrollContainer}>
+                <View style={localStyles.headerRow}>
+                    {SUPPORT_SUB_PAGES.includes(currentView) && <TouchableOpacity onPress={handleBackNavigation} style={localStyles.backBtn}><Ionicons name="arrow-back" size={24} color={isDark ? '#fff' : '#111'} /></TouchableOpacity>}
+                    <Text style={[globalStyles.h2, localStyles.bottomTitle, { color: isDark ? '#fff' : '#000' }]}>{title}</Text>
+                </View>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                    <View style={isGrid ? localStyles.gridContainer : { paddingBottom: 40 }}>
+                        {isGrid 
+                            ? items.map((item, i) => <GridItem key={i} item={item} onPress={() => handleNavigation(item)} isDark={isDark} />)
+                            : items.map((item, i) => <SettingItem key={i} item={item} onPress={() => handleNavigation(item)} isDark={isDark} />)
+                        }
+                    </View>
+                </ScrollView>
+            </View>
+        );
     };
 
     return (
-        <BaseSheet visible={true} onClose={onClose} title={title} showBackButton={SUPPORT_SUB_PAGES.includes(currentView) || currentView === 'CreateTicket' || currentView === 'TicketDetails'} onBackPress={handleBackNavigation}>
+        <BaseSheet visible={true} onClose={onClose} isDark={isDark}>
             {renderContent()}
         </BaseSheet>
     );
 };
 
-// --- ThirdSheet ---
-export const ThirdSheet = ({ sheet, onClose }) => {
-    const { user, settings } = useAppStore(state => ({ user: state.user, settings: state.userSettings || {} }));
-    const isDark = settings.darkMode === true;
-    if (!sheet) return null;
-    // [FIX-1] Accept either postId (preferred) or body (legacy) for backward compat
-    if (sheet.title === 'Comments') return <BaseSheet visible={true} onClose={onClose} title="Comments" sheetHeight='75%'><CommentsView postId={sheet.postId || sheet.body} /></BaseSheet>;
-    return <BaseSheet visible={true} onClose={onClose} title={sheet.title || sheet.source || 'Details'} sheetHeight='75%' showBackButton={true}><SettingsSubContent source={sheet.source} title={sheet.title} user={user} onClose={onClose} isDark={isDark} /></BaseSheet>;
-};
-
-// --- FourthSheet ---
-export const FourthSheet = ({ sheet, onClose }) => {
-    const { userSettings } = useAppStore(state => ({ userSettings: state.userSettings }));
+export const ThirdSheet = ({ sheet, onClose, onFourth, onDeepLink, setProfilePeek }) => {
+    const { userSettings } = useAppStore();
     const isDark = userSettings?.darkMode === true;
     if (!sheet) return null;
-    return <BaseSheet visible={true} onClose={onClose} title={sheet.source || 'Advanced'} sheetHeight='55%' showBackButton={true}><View style={localStyles.scrollContainer}><Text style={[globalStyles.p, { color: isDark ? '#ccc' : '#333' }]}>{sheet.body}</Text></View></BaseSheet>;
-};
 
-// --- FifthSheet ---
-export const FifthSheet = ({ sheet, onClose }) => {
-    const { userSettings } = useAppStore(state => ({ userSettings: state.userSettings }));
-    const isDark = userSettings?.darkMode === true;
-    if (!sheet) return null;
+    const handleNavigation = (item) => {
+        if (item.next === 'ProfilePeek') { onClose(); setTimeout(() => setProfilePeek({ userId: item.userId || 'demo1' }), 300); return; }
+        if (item.next === 'Browser' && item.url) { onClose(); setTimeout(() => onDeepLink(item.url), 300); return; }
+        const sheetData = { source: item.next, title: item.title, items: item.items || [] };
+        if (onFourth) onFourth({ ...sheetData, onDeepLink });
+    };
+
+    const items = sheet.items || [];
     return (
-        <Modal visible={true} transparent animationType="fade" onRequestClose={onClose}>
-            <View style={globalStyles.overlay}>
-                <View style={[globalStyles.cardModal, { backgroundColor: isDark ? '#1C1C1E' : '#fff' }]}>
-                    <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#000' }]}>{sheet.title || "Notice"}</Text>
-                    <Text style={[globalStyles.p, { color: isDark ? '#ccc' : '#333', marginVertical: 10 }]}>{sheet.body || "Operation completed."}</Text>
-                    <TouchableOpacity style={globalStyles.primaryBtn} onPress={() => { if (sheet.deepAction && sheet.onDeepLink) sheet.onDeepLink(sheet.deepAction); onClose(); }}><Text style={globalStyles.joinLabel}>{sheet.deepAction === 'DeleteAccount' ? 'CONFIRM ACTION' : 'OK'}</Text></TouchableOpacity>
+        <BaseSheet visible={true} onClose={onClose} isDark={isDark}>
+            <View style={localStyles.scrollContainer}>
+                <Text style={[globalStyles.h2, localStyles.bottomTitle, { color: isDark ? '#fff' : '#000' }]}>{sheet.title}</Text>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                    <View style={{ paddingBottom: 40 }}>
+                        {items.map((item, i) => <SettingItem key={i} item={item} onPress={() => handleNavigation(item)} isDark={isDark} />)}
+                    </View>
+                </ScrollView>
+            </View>
+        </BaseSheet>
+    );
+};
+
+export const FourthSheet = ({ sheet, onClose, onFifth, onDeepLink }) => {
+    const { userSettings } = useAppStore();
+    const isDark = userSettings?.darkMode === true;
+    if (!sheet) return null;
+
+    const handleNavigation = (item) => {
+        if (item.next === 'Browser' && item.url) { onClose(); setTimeout(() => onDeepLink(item.url), 300); return; }
+        if (onFifth) onFifth({ source: item.next, title: item.title, items: item.items || [], onDeepLink });
+    };
+
+    const items = sheet.items || [];
+    return (
+        <BaseSheet visible={true} onClose={onClose} isDark={isDark}>
+            <View style={localStyles.scrollContainer}>
+                <Text style={[globalStyles.h2, localStyles.bottomTitle, { color: isDark ? '#fff' : '#000' }]}>{sheet.title}</Text>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                    <View style={{ paddingBottom: 40 }}>
+                        {items.map((item, i) => <SettingItem key={i} item={item} onPress={() => handleNavigation(item)} isDark={isDark} />)}
+                    </View>
+                </ScrollView>
+            </View>
+        </BaseSheet>
+    );
+};
+
+export const FifthSheet = ({ sheet, onClose, onDeepLink }) => {
+    const { userSettings } = useAppStore();
+    const isDark = userSettings?.darkMode === true;
+    if (!sheet) return null;
+
+    const handleNavigation = (item) => {
+        if (item.next === 'Browser' && item.url) { onClose(); setTimeout(() => onDeepLink(item.url), 300); return; }
+    };
+
+    const items = sheet.items || [];
+    return (
+        <BaseSheet visible={true} onClose={onClose} isDark={isDark}>
+            <View style={localStyles.scrollContainer}>
+                <Text style={[globalStyles.h2, localStyles.bottomTitle, { color: isDark ? '#fff' : '#000' }]}>{sheet.title}</Text>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                    <View style={{ paddingBottom: 40 }}>
+                        {items.map((item, i) => <SettingItem key={i} item={item} onPress={() => handleNavigation(item)} isDark={isDark} />)}
+                    </View>
+                </ScrollView>
+            </View>
+        </BaseSheet>
+    );
+};
+
+const EditProfileView = ({ onClose }) => {
+    const { userSettings } = useAppStore();
+    const isDark = userSettings?.darkMode === true;
+    return (
+        <View style={{ flex: 1 }}>
+            <View style={[localStyles.headerRow, { paddingHorizontal: 20, marginTop: 10, borderBottomWidth: 0 }]}>
+                <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#111' }]}>Edit Profile</Text>
+                <TouchableOpacity onPress={onClose}><Ionicons name="close" size={28} color={isDark ? '#fff' : '#111'} /></TouchableOpacity>
+            </View>
+            <View style={{ padding: 20, alignItems: 'center' }}>
+                <View style={localStyles.editAvatarWrap}>
+                    <Image source={{ uri: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80' }} style={localStyles.editAvatar} />
+                    <TouchableOpacity style={localStyles.editAvatarBtn}><Ionicons name="camera" size={20} color="#fff" /></TouchableOpacity>
+                </View>
+                <TextInput style={[localStyles.input, { width: '100%', marginTop: 30, backgroundColor: isDark ? '#1C1C1E' : '#f5f5f5', color: isDark ? '#fff' : '#000' }]} placeholder="Name" placeholderTextColor={isDark ? '#888' : '#999'} defaultValue="Ran Eizikovich" />
+                <TextInput style={[localStyles.input, { width: '100%', marginTop: 15, backgroundColor: isDark ? '#1C1C1E' : '#f5f5f5', color: isDark ? '#fff' : '#000' }]} placeholder="Bio" placeholderTextColor={isDark ? '#888' : '#999'} defaultValue="Software Developer • Cebu" />
+                <TouchableOpacity style={[localStyles.saveBtn, { width: '100%', marginTop: 30 }]} onPress={onClose}>
+                    <Text style={localStyles.saveBtnText}>Save Changes</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+};
+
+const AiRecommendationsView = ({ recommendations = [], onClose, setSecondSheet, setPulseCreateOpen, isDark }) => {
+    const themeBg = isDark ? '#000000' : '#F9FAFB';
+    const cardBg = isDark ? '#1C1C1E' : '#FFFFFF';
+    const textColor = isDark ? '#FFFFFF' : '#111111';
+    const subTextColor = isDark ? '#8E8E93' : '#666666';
+    const borderColor = isDark ? '#2C2C2E' : '#E5E5EA';
+
+    // --- State Machine for the AI Toolkit Command ---
+    const [oracleQuery, setOracleQuery] = useState('');
+    const [oracleResponse, setOracleResponse] = useState('');
+    const [vibeInput, setVibeInput] = useState('');
+    const [vibeResult, setVibeResult] = useState('');
+    const [scannerInsight, setScannerInsight] = useState('');
+    const [wingmanReplies, setWingmanReplies] = useState([]);
+    const [loadingTool, setLoadingTool] = useState(null);
+
+    // 🧠 4. KliqMind Oracle
+    const handleAskOracle = () => {
+        if (!oracleQuery.trim()) return;
+        setLoadingTool('oracle');
+        setTimeout(() => {
+            setOracleResponse(`Ran, the social graph shows a 42% engagement spike in tech architecture topics within Cebu City. Deploying your Sovereign Eye architecture overview will algorithmically maximize network reach right now.`);
+            setLoadingTool(null);
+        }, 800);
+    };
+
+    // 🔮 1. Vibe Translator
+    const handleTranslateVibe = () => {
+        if (!vibeInput.trim()) return;
+        setLoadingTool('vibe');
+        setTimeout(() => {
+            setVibeResult(`"Architecting systems at Ramos Tower while the city rests. The social engine runs on data, but KliqMind runs on pure execution. ⚡ #SovereignEye #CebuDevs"`);
+            setLoadingTool(null);
+        }, 800);
+    };
+
+    // 📡 2. Network Scanner
+    const handleScanNetwork = () => {
+        setLoadingTool('scanner');
+        setTimeout(() => {
+            setScannerInsight(`INTELLIGENCE REPORT: Massive 88% velocity vector detected in lifestyle and fitness threads across your network tier. Strategic Move: Publish a high-fashion studio capture immediately to capture peak algorithmic stream.`);
+            setLoadingTool(null);
+        }, 900);
+    };
+
+    // 🪽 3. Auto-Wingman
+    const handleGenerateWingman = () => {
+        setLoadingTool('wingman');
+        setTimeout(() => {
+            setWingmanReplies([
+                "Absolute masterclass in scalability. Cebu isn't ready for this level of execution! 🔥",
+                "Exceptional data structures. Let's analyze the underlying behavioral metrics next. ⚡",
+                "Incredible velocity on this thread. Pure sovereign energy right here! 🚀"
+            ]);
+            setLoadingTool(null);
+        }, 800);
+    };
+
+    const handleShareAsPulse = (textToShare) => {
+        alert(`Pulse drafted successfully! 🚀\n\n${textToShare}`);
+        onClose();
+        setTimeout(() => setPulseCreateOpen(true), 300);
+    };
+
+    return (
+        <ScrollView style={{ backgroundColor: themeBg, padding: 20 }} showsVerticalScrollIndicator={false}>
+            {/* Command Header */}
+            <View style={{ marginBottom: 24, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ backgroundColor: 'rgba(131, 56, 236, 0.12)', padding: 12, borderRadius: 14 }}>
+                    <Ionicons name="sparkles" size={24} color="#8338EC" />
+                </View>
+                <View>
+                    <Text style={{ fontSize: 22, fontWeight: '900', color: textColor, letterSpacing: -0.5 }}>KliqMind AI Toolkit</Text>
+                    <Text style={{ fontSize: 13, color: subTextColor, fontWeight: '600' }}>Sovereign Agent Command Interface</Text>
                 </View>
             </View>
-        </Modal>
+
+            {/* 🧠 TOOL 4: KliqMind Oracle */}
+            <View style={{ backgroundColor: cardBg, padding: 18, borderRadius: 20, marginBottom: 16, borderWidth: 1, borderColor: borderColor }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+                    <Ionicons name="analytics" size={18} color="#8338EC" />
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: textColor }}>KliqMind Oracle</Text>
+                </View>
+                <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#121214' : '#F3F4F6', borderRadius: 14, paddingHorizontal: 14, alignItems: 'center', height: 48, borderWidth: 1, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }}>
+                    <TextInput
+                        style={{ flex: 1, height: '100%', color: textColor, fontSize: 14 }}
+                        placeholder="What's on your mind?"
+                        placeholderTextColor={isDark ? '#555558' : '#A9A9B0'}
+                        value={oracleQuery}
+                        onChangeText={setOracleQuery}
+                        onSubmitEditing={handleAskOracle}
+                    />
+                    <TouchableOpacity onPress={handleAskOracle} disabled={loadingTool === 'oracle'}>
+                        {loadingTool === 'oracle' ? <ActivityIndicator size="small" color="#8338EC" /> : <Ionicons name="arrow-forward" size={18} color="#8338EC" />}
+                    </TouchableOpacity>
+                </View>
+                {oracleResponse ? (
+                    <View style={{ marginTop: 14, backgroundColor: isDark ? '#121214' : '#F9FAFB', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: borderColor }}>
+                        <Text style={{ color: textColor, fontSize: 14, lineHeight: 22 }}>{oracleResponse}</Text>
+                        <TouchableOpacity style={{ marginTop: 12, alignSelf: 'flex-end', backgroundColor: '#8338EC', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 }} onPress={() => handleShareAsPulse(oracleResponse)}>
+                            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Share as Pulse</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : null}
+            </View>
+
+            {/* 🔮 TOOL 1: Vibe Translator */}
+            <View style={{ backgroundColor: cardBg, padding: 18, borderRadius: 20, marginBottom: 16, borderWidth: 1, borderColor: borderColor }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 8 }}>
+                    <Ionicons name="color-filter" size={18} color="#FF006E" />
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: textColor }}>Vibe Translator</Text>
+                </View>
+                <Text style={{ fontSize: 13, color: subTextColor, marginBottom: 14 }}>Convert your current raw state into a high-impact broadcast pulse.</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TextInput
+                        style={{ flex: 1, backgroundColor: isDark ? '#121214' : '#F3F4F6', borderRadius: 14, height: 46, paddingHorizontal: 14, color: textColor, fontSize: 14, borderWidth: 1, borderColor: isDark ? '#3A3A3C' : '#E5E5EA' }}
+                        placeholder="e.g., grinding code, building ecosystems..."
+                        placeholderTextColor={isDark ? '#555558' : '#A9A9B0'}
+                        value={vibeInput}
+                        onChangeText={setVibeInput}
+                    />
+                    <TouchableOpacity style={{ backgroundColor: '#FF006E', paddingHorizontal: 18, borderRadius: 14, justifyContent: 'center' }} onPress={handleTranslateVibe} disabled={loadingTool === 'vibe'}>
+                        {loadingTool === 'vibe' ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Translate</Text>}
+                    </TouchableOpacity>
+                </View>
+                {vibeResult ? (
+                    <View style={{ marginTop: 14, backgroundColor: isDark ? '#121214' : '#FFF0F5', padding: 14, borderRadius: 14, borderLeftWidth: 3, borderLeftColor: '#FF006E' }}>
+                        <Text style={{ color: textColor, fontStyle: 'italic', fontSize: 14, lineHeight: 22 }}>{vibeResult}</Text>
+                        <TouchableOpacity style={{ marginTop: 12, alignSelf: 'flex-end', backgroundColor: '#FF006E', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 }} onPress={() => handleShareAsPulse(vibeResult)}>
+                            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Post Pulse</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : null}
+            </View>
+
+            {/* 📡 TOOL 2: Network Scanner */}
+            <View style={{ backgroundColor: cardBg, padding: 18, borderRadius: 20, marginBottom: 16, borderWidth: 1, borderColor: borderColor }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 8 }}>
+                    <Ionicons name="radio" size={18} color="#00F5D4" />
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: textColor }}>Network Scanner</Text>
+                </View>
+                <Text style={{ fontSize: 13, color: subTextColor, marginBottom: 14 }}>Scan social nodes and vectors for live strategic insights.</Text>
+                <TouchableOpacity style={{ backgroundColor: isDark ? 'rgba(0, 245, 212, 0.08)' : '#E6FAF7', borderWidth: 1, borderColor: '#00F5D4', paddingVertical: 14, borderRadius: 14, alignItems: 'center' }} onPress={handleScanNetwork} disabled={loadingTool === 'scanner'}>
+                    {loadingTool === 'scanner' ? <ActivityIndicator color="#00F5D4" /> : <Text style={{ color: '#00F5D4', fontWeight: '700', fontSize: 14 }}>Run Intelligence Scan</Text>}
+                </TouchableOpacity>
+                {scannerInsight ? (
+                    <View style={{ marginTop: 14, backgroundColor: isDark ? '#121214' : '#E5FAF6', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#00F5D4' }}>
+                        <Text style={{ color: textColor, fontSize: 14, lineHeight: 22, fontWeight: '500' }}>{scannerInsight}</Text>
+                    </View>
+                ) : null}
+            </View>
+
+            {/* 🪽 TOOL 3: Auto-Wingman */}
+            <View style={{ backgroundColor: cardBg, padding: 18, borderRadius: 20, marginBottom: 40, borderWidth: 1, borderColor: borderColor }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 8 }}>
+                    <Ionicons name="rocket" size={18} color="#FF5E00" />
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: textColor }}>Auto-Wingman</Text>
+                </View>
+                <Text style={{ fontSize: 13, color: subTextColor, marginBottom: 14 }}>Generate high-impact, contextual responses to dominate viral threads.</Text>
+                <TouchableOpacity style={{ backgroundColor: '#FF5E00', paddingVertical: 14, borderRadius: 14, alignItems: 'center' }} onPress={handleGenerateWingman} disabled={loadingTool === 'wingman'}>
+                    {loadingTool === 'wingman' ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Generate Smart Replies</Text>}
+                </TouchableOpacity>
+                {wingmanReplies.length > 0 ? (
+                    <View style={{ marginTop: 14, gap: 10 }}>
+                        {wingmanReplies.map((reply, idx) => (
+                            <TouchableOpacity key={idx} style={{ backgroundColor: isDark ? '#121214' : '#F9FAFB', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: borderColor }} onPress={() => { alert(`Copied to clipboard:\n"${reply}"`); }}>
+                                <Text style={{ color: textColor, fontSize: 13, lineHeight: 18 }}>{reply}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                ) : null}
+            </View>
+        </ScrollView>
     );
 };
 
 const localStyles = StyleSheet.create({
+    scrollContainer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 },
+    headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+    backBtn: { marginRight: 15 },
+    bottomTitle: { fontSize: 22 },
+    aiTitle: { fontSize: 22, marginBottom: 10 },
     safeAreaWhite: { flex: 1 },
-    scrollContainer: { padding: 20 },
-    label: { fontSize: 13, marginBottom: 5, marginTop: 15, fontWeight: '600' },
-    input: { borderRadius: 10, padding: 12, fontSize: 16 },
-    saveBtn: { backgroundColor: brand.blue, padding: 15, borderRadius: 12, marginTop: 30, alignItems: 'center' },
-    saveBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-    card: { padding: 15, borderRadius: 12, borderWidth: 1 },
-    cardHeader: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
-    twoFactorRow: { marginTop: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    twoFactorTitle: { fontWeight: 'bold', fontSize: 16 },
-    twoFactorSub: { fontSize: 12 },
-    rowItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1 },
-    providerInfo: { flexDirection: 'row', alignItems: 'center' },
-    providerName: { marginLeft: 15, fontSize: 16, fontWeight: '500' },
-    connectText: { color: brand.blue, fontWeight: 'bold' },
-    blockedHelper: { marginBottom: 15 },
-    blockedName: { fontWeight: 'bold' },
-    blockedHandle: { fontSize: 12 },
-    unblockBtn: { padding: 8, borderRadius: 8 },
-    unblockText: { fontSize: 12, fontWeight: '600' },
-    emptyText: { textAlign: 'center', marginTop: 20 },
-    langText: { fontSize: 16 },
-    fallbackContainer: { padding: 20, alignItems: 'center' },
-    fallbackTitle: { marginTop: 15 },
-    fallbackSub: { textAlign: 'center', marginTop: 10 },
-    gridWrap: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginTop: 20 },
-    aiTitle: { marginBottom: 15 },
-    aiInfoTitle: { marginBottom: 10 },
-    modalBodyText: { marginVertical: 10 },
-    
-    // AI Insights Internal Design Styles
-    aiInternalContainer: { flex: 1, padding: 24 },
-    aiHeader: { alignItems: 'center', marginBottom: 25 },
-    aiBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(98, 0, 238, 0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginBottom: 12 },
-    aiBadgeText: { fontSize: 10, fontWeight: '800', color: '#6200EE', marginLeft: 6, letterSpacing: 1 },
-    aiMainTitle: { fontSize: 28, fontWeight: '900', marginBottom: 8 },
-    aiMainSub: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-    sectionTitle: { fontSize: 13, fontWeight: '900', marginBottom: 12, letterSpacing: 1 },
-    oracleContainer: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, height: 55, borderWidth: 1, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5 },
-    oracleInput: { flex: 1, height: '100%', paddingHorizontal: 15, fontSize: 14, fontWeight: '500' },
-    oracleBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#6200EE', justifyContent: 'center', alignItems: 'center', marginRight: 8, elevation: 3 },
-    toolboxGrid: { width: '100%' },
-    toolboxRow: { flexDirection: 'row', gap: 12 },
-    toolChip: { flex: 1, height: 90, borderRadius: 20, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-    toolGradient: { ...StyleSheet.absoluteFillObject, opacity: 0.8 },
-    toolText: { color: '#fff', fontWeight: 'bold', fontSize: 12, marginTop: 8 },
-    recommendationCard: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 20, marginBottom: 12, borderWidth: 1, elevation: 2 },
-    recAvatar: { width: 50, height: 50, borderRadius: 25, marginRight: 15 },
-    recName: { fontSize: 16, fontWeight: 'bold' },
-    recMatch: { fontSize: 12, color: '#6200EE', fontWeight: '600', marginTop: 2 },
-    emptyContainer: { alignItems: 'center', marginTop: 40 },
+    groupHeader: { height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, borderBottomWidth: 1 },
+    backIcon: { padding: 5 },
+    groupScroll: { paddingBottom: 40 },
+    groupLargeImg: { width: 140, height: 140, borderRadius: 70, borderWidth: 4, borderColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 8 },
+    groupActions: { flexDirection: 'row', justifyContent: 'center', gap: 20 },
+    actionCircle: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.1, shadowRadius: 5, elevation: 3 },
+    editAvatarWrap: { position: 'relative' },
+    editAvatar: { width: 120, height: 120, borderRadius: 60 },
+    editAvatarBtn: { position: 'absolute', bottom: 0, right: 0, backgroundColor: brand.blue, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
+    input: { height: 50, borderRadius: 12, paddingHorizontal: 15, fontSize: 16 },
+    saveBtn: { backgroundColor: brand.blue, height: 50, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    saveBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+    statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+    statusText: { fontWeight: 'bold', fontSize: 12 },
+    ticketMeta: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#eee' },
+    metaText: { color: '#888', fontSize: 12 },
+    chatBtn: { marginTop: 20, backgroundColor: '#000', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 50, borderRadius: 12, gap: 10 },
+    chatBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+    aiEmptyWrap: { padding: 40, alignItems: 'center' },
+    recommendationCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, marginBottom: 12 },
+    recIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 15, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 },
+    recContent: { flex: 1, paddingRight: 10 },
+    recTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
+    recDesc: { fontSize: 13, lineHeight: 18 }
 });

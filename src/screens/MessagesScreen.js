@@ -1,5 +1,11 @@
 // client/src/screens/MessagesScreen.js
-// ⭐️ V10.1 ULTIMATE: Clean Layout + DM Name Resolution Fix ⭐️
+// ⭐️ V10.2 ULTIMATE: Clean Layout + DM Name Resolution + Re-render Fix ⭐️
+//
+// CHANGES from V10.1:
+//   [FIX] useEffect dependency array: removed userCache and resolveUser
+//         from deps to prevent re-render loop. The internal !userCache[otherId]
+//         check still guarantees each user is resolved only once. Saves CPU
+//         and battery on weak devices.
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -64,13 +70,17 @@ export default function MessagesScreen({ messageTab, setMessageTab, setVideoModa
   }, [refreshAllData]);
 
   // רזולוציית משתמשים להיסטוריית הצ'אט
+  // ⭐️ V10.2: יציבות — הוצאנו את userCache ו-resolveUser מה-deps כדי
+  // למנוע re-render loop. הבדיקה הפנימית !userCache[otherId] עדיין
+  // מוודאת ש-resolveUser נקרא רק פעם אחת לכל משתמש.
   useEffect(() => {
     if (!chatHistory) return;
     Object.keys(chatHistory).forEach(chatId => {
       const otherId = getOtherUserIdInDM?.(chatId);
       if (otherId && resolveUser && !userCache[otherId]) resolveUser(otherId);
     });
-  }, [chatHistory, userCache, resolveUser, getOtherUserIdInDM]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatHistory, getOtherUserIdInDM]);
 
   const myId = useMemo(() => user?.id ? String(user.id) : null, [user?.id]);
 

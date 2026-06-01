@@ -1,36 +1,41 @@
-// hooks/useWebScrollFix.js — v4 DEFINITIVE
+// hooks/useWebScrollFix.js — v5.1 SAFE COLOR FIX
 //
-// תיקון אחד בלבד: overflow:hidden → overflow-y:auto על #root > div
-// שום שינוי ב-height, position, background, min-height — כלום אחר.
+// תיקון בטוח לפס הלבן:
+//   1. צביעת body+html בלבן מלא (#FFFFFF) במקום אפור-לבן (#F9FAFB)
+//   2. ביטול overscroll של הדפדפן
+//   3. אין שינויים ב-layout (#root נשאר כפי שהוא)
+//   4. הקוד רץ רק ב-Web — לא משפיע על iOS/Android
 //
-// הסיבה לפס הלבן עד כה: v2 הכניס height:auto על #root>div,
-// מה שגרם לו להתכווץ לגובה התוכן. body הלבן נחשף מתחתיו.
+// שינוי מ-v5: צבע בלבד. #F9FAFB → #FFFFFF.
+// אין שינויים ב-height, width, או ב-#root structure.
 
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
-// כל ה-IDs של גרסאות קודמות — מוסרים בכוח
 const OLD_STYLE_IDS = [
     'kliqtap-scroll-fix',
     'kliqtap-scroll-fix-v2',
     'kliqtap-scroll-fix-v3',
     'kliqtap-scroll-fix-v3-2',
-    'kliqtap-scroll-fix-v4', // גם ה-ID הנוכחי — נאכוף re-inject תמיד
+    'kliqtap-scroll-fix-v4',
+    'kliqtap-scroll-fix-v5',
+    'kliqtap-scroll-fix-v5-1',
+    'kliqtap-scroll-fix-v6',
 ];
 
-const STYLE_ID = 'kliqtap-scroll-fix-v4';
+const STYLE_ID = 'kliqtap-scroll-fix-v5-1';
 
-export const useWebScrollFix = () => {
+export const useWebScrollFix = (isDark = false) => {
     useEffect(() => {
         if (Platform.OS !== 'web') return;
 
-        // הסרה בכוח של כל הגרסאות הישנות + הנוכחית (כדי להבטיח CSS נקי)
+        // הסרת כל הגרסאות הקודמות
         OLD_STYLE_IDS.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.remove();
         });
 
-        // גם הסרת כל inline style שהוכנס ישירות ל-body / #root > div
+        // ניקוי inline styles ישנים
         document.body.style.removeProperty('background-color');
         const rootDiv = document.querySelector('#root > div');
         if (rootDiv) {
@@ -39,20 +44,26 @@ export const useWebScrollFix = () => {
             rootDiv.style.removeProperty('min-height');
         }
 
-        // הזרקת CSS נקי — רק overflow, שום דבר אחר
+        // צבע אחיד: לבן מלא ב-light, שחור עמוק ב-dark
+        const bgColor = isDark ? '#000000' : '#FFFFFF';
+
         const style = document.createElement('style');
         style.id = STYLE_ID;
         style.innerHTML = `
-            /*
-             * הכלל היחיד הנדרש:
-             * RN Web שם overflow:hidden על #root>div — זה בלבד חוסם גלילה.
-             * position:fixed + height:100% נשארים (חיוניים ל-layout).
-             * שינוי overflow:hidden → overflow-y:auto = גלילה עובדת.
-             */
+            /* תיקון Overscroll: צביעת html ו-body בצבע הרקע של האפליקציה */
+            html, body {
+                background-color: ${bgColor} !important;
+                overscroll-behavior: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            /* כלל הגלילה הקיים — נשאר בלי שינוי */
             #root > div {
                 overflow-y: auto !important;
                 -webkit-overflow-scrolling: touch !important;
                 touch-action: pan-y !important;
+                overscroll-behavior: none !important;
             }
 
             body {
@@ -65,5 +76,5 @@ export const useWebScrollFix = () => {
         const passiveTouchMove = () => {};
         document.addEventListener('touchmove', passiveTouchMove, { passive: true });
         return () => document.removeEventListener('touchmove', passiveTouchMove);
-    }, []);
+    }, [isDark]);
 };

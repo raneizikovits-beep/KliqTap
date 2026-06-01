@@ -1,17 +1,31 @@
 // client/src/store/authSlice.js
-// 🔐 V3.1 PRODUCTION: Fixed Silent Failures for Email Verification 🔐
+// 🔐 V3.3 PRODUCTION: FCM registration + Radar shape fix 🔐
 //
-// שינויים מ-V3.0:
-//   • תוקן באג Silent Fail ב-register: עכשיו מזהה כשסופרבייס לא מחזיר טוקן
-//     (בגלל דרישת אימות אימייל) ומחזיר requiresVerification: true ל-UI.
+// שינויים מ-V3.2:
+//   • [FIX]  radarResults: היה [] (array), תוקן ל-object שתואם למבנה
+//            שהשרת מחזיר: { users, groups, searchContext }. בלעדי זה,
+//            useAppStore.fetchRadarData היה מאפס את ה-state ל-array
+//            ריק וה-Radar לא הציג כלום.
+//
+// שינויים מ-V3.1 (V3.2):
+//   • [FIX]  קריאה ל-registerPushTokenAfterLogin() אחרי 3 זרימות auth
+//            - initialize() (re-login from stored token)
+//            - login() (email+password)
+//            - loginWithGoogle() (Google OAuth)
+//     בלי זה ה-FCM token לא נשמר בשרת, וכל ה-push notifications נכשלים
+//     בשקט עם "No FCM token for user ... — skipping OS push".
+//   • Fire-and-forget: לא ממתינים, לא חוסמים, .catch() תמיד.
 
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, ToastAndroid } from 'react-native';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 import * as api from './api';
 import { supabase } from '../lib/supabase';
 import { socialInitialState } from './socialSlice';
 import { chatInitialState } from './chatSlice';
+// ⭐️ NEW V3.2 — registers the device's FCM push token with the server.
+// Safe to call multiple times. Has its own internal cache.
+import { notificationBridge } from '../services/notificationBridge';
 
 // ─────────────────────────────────────────────────────────────
 // Auth-specific initial state
@@ -44,7 +58,7 @@ const authInitialState = {
     userCache: {},
     followStatuses: {},
     aiRecommendations: [],
-    radarResults: [],
+    radarResults: { users: [], groups: [], searchContext: null },
     leaderboard: [],
     profilePeekUser: null,
     viewingUserId: null,
@@ -74,11 +88,28 @@ const GOOGLE_WEB_CLIENT_ID =
     '808544466960-o2f69b7hiqse0n43rfbmktopurnu46jm.apps.googleusercontent.com';
 
 // ─────────────────────────────────────────────────────────────
+// ⭐️ NEW V3.2 — tiny helper used by every successful auth path
+// ─────────────────────────────────────────────────────────────
+const registerPushTokenSilently = () => {
+    // Fire-and-forget via bridge — breaks the require cycle.
+    notificationBridge.emit('auth:login', {});
+};
+
+// ─────────────────────────────────────────────────────────────
 // Slice factory
 // ─────────────────────────────────────────────────────────────
 export const createAuthSlice = (set, get) => {
 
+    // 🟢 1. הוספת משתנה "מנעול" מקומי
+    let isCurrentlyLoggingOut = false;
+
     const logoutCleanup = async () => {
+        // 🟢 2. אם המנעול סגור (אנחנו כבר מנקים), תתעלם מהקריאה הנוכחית ותצא
+        if (isCurrentlyLoggingOut) return;
+        
+        // 🟢 3. נועלים את השער כדי שקריאות אחרות בשנייה הזו לא ייכנסו
+        isCurrentlyLoggingOut = true;
+
         if (__DEV__) console.log('🧹 [AuthSlice] Performing full cleanup...');
 
         // Pull down active connections before wiping state
@@ -90,6 +121,11 @@ export const createAuthSlice = (set, get) => {
 
         // Composed wipe — every slice's initial state is restored
         set({ ...initialGlobalState, isInitialized: true });
+
+        // 🟢 4. משחררים את המנעול אחרי שנייה, כדי שאם המשתמש ירצה להתחבר מחדש המערכת תעבוד
+        setTimeout(() => {
+            isCurrentlyLoggingOut = false;
+        }, 1000);
     };
 
     api.setAuthFailureCallback(logoutCleanup);
@@ -133,12 +169,22 @@ export const createAuthSlice = (set, get) => {
                         get().connectSocket?.();
                         get().refreshAllData?.();
                         get().fetchSettings?.();
+
+                        // ⭐️ NEW V3.2 — register the device's FCM token now that we're auth'd
+                        registerPushTokenSilently();
                     } else {
                         throw new Error('Invalid user object received from API.');
                     }
                 } catch (apiError) {
-                    if (__DEV__) console.warn('[AuthSlice] Token invalid during init. Logging out...', apiError);
-                    await logoutCleanup();
+                    const errorStr = String(apiError || '');
+                    // ⭐️ הגנה חכמה מפני חסימות עומס מוגזמות בזמן פיתוח ⭐️
+                    if (errorStr.includes('ThrottlerException') || errorStr.includes('429')) {
+                        if (__DEV__) console.warn('[AuthSlice] Server throttled (Too Many Requests). Keeping token/session.', apiError);
+                        set({ isInitialized: true });
+                    } else {
+                        if (__DEV__) console.warn('[AuthSlice] Token invalid during init. Logging out...', apiError);
+                        await logoutCleanup();
+                    }
                 }
             } catch (e) {
                 if (__DEV__) console.error('[AuthSlice] Init Error:', e);
@@ -175,6 +221,9 @@ export const createAuthSlice = (set, get) => {
                 get().connectSocket?.();
                 get().refreshAllData?.();
                 get().fetchSettings?.();
+
+                // ⭐️ NEW V3.2 — register the device's FCM token after a successful login
+                registerPushTokenSilently();
             } catch (error) {
                 if (__DEV__) console.error('[AuthSlice] Login failed:', error);
                 set({ isAuthLoading: false });
@@ -223,6 +272,9 @@ export const createAuthSlice = (set, get) => {
                 get().connectSocket?.();
                 get().refreshAllData?.();
                 get().fetchSettings?.();
+
+                // ⭐️ NEW V3.2 — register the device's FCM token after Google sign-in
+                registerPushTokenSilently();
             } catch (error) {
                 if (__DEV__) console.error('[AuthSlice] Google Login failed:', error);
                 Alert.alert('Google Login Failed', error.message);
@@ -259,6 +311,9 @@ export const createAuthSlice = (set, get) => {
 
                 get().connectSocket?.();
                 get().refreshAllData?.();
+
+                // ⭐️ NEW V3.2 — register the device's FCM token after registration too
+                registerPushTokenSilently();
                 
                 return { requiresVerification: false };
             } catch (error) {
@@ -270,14 +325,16 @@ export const createAuthSlice = (set, get) => {
 
         resetPassword: async (email) => {
             try {
+                
+                // הוספת ה-Hash (/#/) כדי להגן על הניתוב של כרום מפני קריסות שרת (SPA Routing)
                 const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                    redirectTo: 'kliqtap://reset-password',
+                    redirectTo: 'https://kliqtap.com/reset-password'
                 });
+                
                 if (error) throw error;
                 return true;
-            } catch (error) {
-                if (__DEV__) console.error('Reset Password Error:', error);
-                throw new Error(error.message || 'Failed to send reset email.');
+            } catch (e) {
+                throw new Error(e.message || 'Failed to send reset email.');
             }
         },
 
@@ -307,18 +364,27 @@ export const createAuthSlice = (set, get) => {
             const { user } = get();
             if (!user) return false;
 
+            // ⭐️ השורה הזו מסננת את ה-birthday החוצה מהנתונים שנשלחים
+            const { birthday, ...safeUpdates } = updates;
+            if (birthday) safeUpdates.dateOfBirth = birthday; // ממיר birthday → dateOfBirth
+
             const previousUser = user;
-            set({ user: { ...user, ...updates } }); // optimistic
+            // מעדכנים את ה-State המקומי עם העדכון המלא (כדי שהמשתמש יראה את זה)
+            set({ user: { ...user, ...updates }, profileSaving: true }); 
             try {
                 await api.fetchAPI('/users/me', {
                     method: 'PATCH',
-                    body: JSON.stringify(updates),
+                    body: JSON.stringify(safeUpdates), // כאן שולחים רק את מה ש"בטוח"
                 });
+                set({ profileSaving: false });
+                if (Platform.OS === 'android') {
+                    ToastAndroid.show('✓ Saved', ToastAndroid.SHORT);
+                }
                 get().fetchUserDataAndMotivation?.();
                 return true;
             } catch (e) {
                 if (__DEV__) console.error('[AuthSlice] Failed to update profile:', e);
-                set({ user: previousUser }); // rollback
+                set({ user: previousUser, profileSaving: false }); // rollback
                 Alert.alert('Error', 'Failed to save profile changes.');
                 return false;
             }

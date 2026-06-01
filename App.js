@@ -1,7 +1,8 @@
 // App.js (Entry Point)
 // ⭐️ KliqMind V6.0: Scrolling Restored, Logic Connected, Smart Imports & Push Ready ⭐️
+// ⭐️ Sovereign Eye Update: Deep Linking & Password Reset Integration (Web Hash Support) ⭐️
 
-import { setupPushNotifications } from './src/services/notificationSetup'; //
+import { setupPushNotifications } from './src/services/notificationSetup'; 
 import * as React from "react";
 import { ActivityIndicator, Text, View, Platform, StyleSheet, useWindowDimensions } from "react-native";
 
@@ -21,6 +22,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { NavigationContainer } from '@react-navigation/native'; 
 import { createStackNavigator } from '@react-navigation/stack'; 
 import Toast from 'react-native-toast-message'; 
+import * as Linking from 'expo-linking'; // ⭐️ ייבוא כלי הלינקים של אקספו ⭐️
 
 import { useAppStore } from './src/store/useAppStore'; 
 import { styles } from './src/constants/styles';
@@ -30,6 +32,12 @@ import { navigationRef } from './src/navigation/RootNavigation';
 // --- Screen & Component Imports ---
 import AppRoot from './src/AppRoot'; 
 import AdminNoticeScreen from './src/screens/AdminNoticeScreen'; 
+import { ResetPasswordScreen } from './src/screens/ResetPasswordScreen'; 
+import FeedScreen from './src/screens/FeedScreen';
+import ArenaScreen from './src/screens/ArenaScreen';
+
+// 📸 ייבוא מסך המצלמה החדש לתוך מערכת הניווט הראשית 📸
+import { KliqCameraFilters } from './src/components/KliqCameraFilters'; 
 
 // ⭐️ "ייבוא חכם" למניעת קריסות של מודלים מרחפים ⭐️
 import * as PulseModalModule from './src/components/modals/PulseCreateModal';
@@ -39,6 +47,16 @@ const PulseCreateModal = PulseModalModule.PulseCreateModal || PulseModalModule.d
 const ProfilePeekModal = PeekModalsModule.ProfilePeekModal || PeekModalsModule.default || (() => null);
 
 const Stack = createStackNavigator();
+
+// ⭐️ הגדרת "רשת התפיסה" (Deep Linking) שמחכה ללינקים מהאימייל ⭐️
+const linking = {
+  prefixes: ['kliqtap://', 'https://kliqtap.com'], 
+  config: {
+    screens: {
+      ResetPassword: 'reset-password', 
+    },
+  },
+};
 
 function AppContent() {
     const loadAuthAndMotivation = useAppStore(state => state.loadAuthAndMotivation);
@@ -56,11 +74,12 @@ function AppContent() {
         if (loadAuthAndMotivation) {
             loadAuthAndMotivation(); 
             
-            // ⭐️ הפעלת מערכת ההתראות ברמת המכשיר (Push Notifications) ⭐️
-            // קריאה זו מבקשת רשות מהמשתמש ורושמת את ה-Token בשרת.
-            setupPushNotifications().catch(err => {
-              if (__DEV__) console.warn("Push setup failed during App initialization:", err);
-            });
+      // בדיקה אם המשתמש כבר מחובר (יש token) → נרשום מיד
+      const hasUser = useAppStore.getState().user;
+      setupPushNotifications({ isAuthenticated: !!hasUser }).catch(err => {
+      if (__DEV__) console.warn("Push setup failed during App initialization:", err);
+    });
+
         }
     }, [loadAuthAndMotivation]);
 
@@ -75,9 +94,15 @@ function AppContent() {
     
     return (
         <>
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
+           <Stack.Navigator screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="MainApp" component={AppRoot} />
                 <Stack.Screen name="AdminNotice" component={AdminNoticeScreen} />
+                <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+                {/* 📸 הוספנו את מסך המצלמה כעמוד מלא במערכת הניווט 📸 */}
+                <Stack.Screen name="KliqCameraFilters" component={KliqCameraFilters} />
+                
+                <Stack.Screen name="Feed" component={FeedScreen} />
+                <Stack.Screen name="Arena" component={ArenaScreen} />
             </Stack.Navigator>
 
             {/* חיבור לוגיקת יצירת ה-Pulse (סטורי) לשרת */}
@@ -113,7 +138,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer ref={navigationRef}>
+      {/* ⭐️ כאן הזרקנו את ה-linking לתוך קונטיינר הניווט הראשי ⭐️ */}
+      <NavigationContainer ref={navigationRef} linking={linking}>
         <View style={[
             localStyles.webBackground, 
             !isDesktopWeb && { backgroundImage: 'none', backgroundColor: '#fff', padding: 0 }

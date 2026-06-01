@@ -1,17 +1,25 @@
 // client/src/store/useAppStore.js
-// 🏆 KliqMind V5.1 — Production-Hardened Store
+// 🏆 KliqMind V5.2 — Radar Fully Wired
 //
-// שינויים מ-V5.0:
-//   • resolveUser: cache TTL (5 דקות) — מונע שרות נתונים מיושנים ללא הגבלה
-//   • joinCommunity: rollback אופטימיסטי מלא + Toast על שגיאה
-//   • migrate: immutable — לא מוטציה על persisted ישירות
-//   • userCache: גבול גודל (100 entries) גם ב-live state, לא רק ב-partialize
-//   • fetchProfilePreview: מסנכרן followStatuses אוטומטית
-//   • createSupportTicket: return flow נקי וברור
+// שינויים מ-V5.1:
+//   • [FIX]  fetchRadarData: מושך את המיקום בעצמו אם לא מועבר. אנדה
+//            נקרא בלי פרמטרים מתוך RadarModal/AppModals (במקום undefined,undefined).
+//   • [FIX]  fetchRadarData: response מהשרת הוא object { users, groups, searchContext },
+//            לא array. תוקן ה-Array.isArray שהיה תמיד false ומאפס לריק.
+//   • [FIX]  radarResults initial state: עכשיו object תואם למבנה השרת.
+//
+// שינויים קודמים (V5.1):
+//   • resolveUser: cache TTL (5 דקות)
+//   • joinCommunity: rollback אופטימיסטי + Toast
+//   • migrate: immutable
+//   • userCache: גבול גודל 100 entries
+//   • fetchProfilePreview: סנכרון followStatuses
+//   • createSupportTicket: return flow נקי
 //   • award: dev warning על action name לא מוכר
-//   • postDraftText: initializer ב-global state (safety net אם socialSlice לא מגדיר)
-//   • POINTS_TABLE: מיוצא לצורך testing ו-display
+//   • postDraftText: initializer safety net
+//   • POINTS_TABLE: מיוצא לטסטים
 
+import { createWellnessSlice } from './wellnessSlice';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -114,12 +122,13 @@ const DEFAULT_SETTINGS = Object.freeze({
 // Points map — exported so screens/tests can display action labels
 // ─────────────────────────────────────────────────────────────
 export const POINTS_TABLE = Object.freeze({
-    'Like':         1,
-    'Unlike':      -1,
-    'Comment':      2,
-    'Create Post':  3,
-    'Create Pulse': 4,
-    'Streak':       1,
+    'Like':          1,
+    'Unlike':       -1,
+    'Comment':       2,
+    'Create Post':   3,
+    'Create Pulse':  4,
+    'Create Group':  5,
+    'Streak':        1,
     'Roulette Call': 10,
 });
 
@@ -132,6 +141,7 @@ export const useAppStore = create(
             ...createAuthSlice(set, get),
             ...createSocialSlice(set, get),
             ...createChatSlice(set, get),
+            ...createWellnessSlice(set, get),
 
             // ==========================================
             // 🏆 GAMIFICATION (single source of truth)
@@ -262,6 +272,12 @@ export const useAppStore = create(
 
             setPulseCreateOpen: (isOpen) => set({ pulseCreateOpen: isOpen }),
             setPulseImageUri:   (uri)    => set({ pulseImageUri: uri }),
+            
+            // 🚀 הוספנו את משתני ה-Feed החדשים למצלמה! 🚀
+            postCreateOpen:   false,
+            postImageUri:     null,
+            setPostCreateOpen:  (isOpen) => set({ postCreateOpen: isOpen }),
+            setPostImageUri:    (uri)    => set({ postImageUri: uri }),
 
             // ==========================================
             // 👤 PROFILE PEEK
@@ -468,6 +484,71 @@ export const useAppStore = create(
                 }
             },
 
+            // ==========================================
+            // 🎲 VIBE ROULETTE
+            // ==========================================
+            isRouletteSearching: false,
+            rouletteMatch:       null,
+
+            /**
+             * Find a live stream roulette match.
+             * POST /live/roulette → { match: { roomId, roomName, trend } } | { queued: true }
+             * On match  → stores rouletteMatch; caller (HomeScreen) watches rouletteMatch to navigate.
+             * On queued → Toast shown; socket event 'roulette_match' should call onRouletteMatchReceived.
+             */
+            findStreamRouletteMatch: async () => {
+                const { isRouletteSearching } = get();
+                if (isRouletteSearching) return; // prevent double-tap
+
+                set({ isRouletteSearching: true, rouletteMatch: null });
+
+                try {
+                    const data = await fetchAPI('/live/roulette', { method: 'POST' });
+
+                    if (data?.match) {
+                        set({ rouletteMatch: data.match, isRouletteSearching: false });
+                        Toast.show({
+                            type:  'success',
+                            text1: '⚡ Vibe Match Found!',
+                            text2: `Joining ${data.match.roomName || 'a live room'}…`,
+                        });
+                    } else if (data?.queued) {
+                        Toast.show({
+                            type:  'info',
+                            text1: '🔍 Searching the network…',
+                            text2: "We'll notify you when a match is found.",
+                        });
+                        // Auto-cancel after 30s if socket never delivers a match
+                        setTimeout(() => {
+                            if (get().isRouletteSearching) {
+                                set({ isRouletteSearching: false });
+                                Toast.show({ type: 'info', text1: 'No match found', text2: 'Try again in a moment.' });
+                            }
+                        }, 30_000);
+                    } else {
+                        set({ isRouletteSearching: false });
+                    }
+                } catch (error) {
+                    set({ isRouletteSearching: false });
+                    Toast.show({
+                        type:  'error',
+                        text1: 'Roulette Failed',
+                        text2: 'Could not connect. Please try again.',
+                    });
+                    if (__DEV__) console.error('[Store] Roulette error:', error);
+                }
+            },
+
+            /** Called by your socket listener when server pushes a delayed roulette match. */
+            onRouletteMatchReceived: (match) => {
+                set({ rouletteMatch: match, isRouletteSearching: false });
+                Toast.show({
+                    type:  'success',
+                    text1: '⚡ Vibe Match Found!',
+                    text2: `Joining ${match?.roomName || 'a live room'}…`,
+                });
+            },
+
             /**
              * Join a community with optimistic UI and rollback on failure.
              */
@@ -508,20 +589,84 @@ export const useAppStore = create(
             },
 
             // ==========================================
-            // 📡 RADAR
+            // 📡 RADAR — V5.2: self-sufficient location + correct response handling
             // ==========================================
-            radarResults:    [],
+            radarResults:    { users: [], groups: [], searchContext: null },
             isRadarLoading:  false,
 
             fetchRadarData: async (lat, lon) => {
                 set({ isRadarLoading: true });
                 try {
-                    const data = await fetchAPI(`/geo/radar?lat=${lat}&lon=${lon}`);
-                    set({ radarResults: Array.isArray(data) ? data : [] });
-                } catch {
-                    set({ radarResults: [] });
-                } finally {
+                    // ⭐️ V5.2: אם lat/lon לא הועברו — נמשוך את המיקום בעצמנו.
+                    // זה אומר שכל מי שקורא ל-fetchRadarData() (כמו RadarModal)
+                    // לא צריך להתעסק עם הרשאות מיקום או GPS — הסטור עושה את הכל.
+                    let latitude = lat;
+                    let longitude = lon;
+
+                    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+                        if (__DEV__) console.log('📡 [Radar] Fetching device location...');
+
+                        const Location = await import('expo-location');
+
+                        const { status } = await Location.requestForegroundPermissionsAsync();
+                        if (status !== 'granted') {
+                            if (__DEV__) console.warn('[Radar] Location permission denied');
+                            set({
+                                radarResults: { users: [], groups: [], searchContext: null },
+                                isRadarLoading: false,
+                            });
+                            return;
+                        }
+
+                        const location = await Location.getCurrentPositionAsync({
+                            accuracy: Location.Accuracy.Balanced,
+                        });
+                        latitude = location.coords.latitude;
+                        longitude = location.coords.longitude;
+                    }
+
+                    if (__DEV__) {
+                        console.log(`📡 [Radar] Fetching @ (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
+                    }
+
+                    // ⭐️ V5.2: השרת מחזיר { users, groups, searchContext } — לא array.
+                    const data = await fetchAPI(`/geo/radar?lat=${latitude}&lon=${longitude}`);
+
+                    if (__DEV__) {
+                        console.log(`✅ [Radar] Got ${data?.users?.length || 0} users, ${data?.groups?.length || 0} groups`);
+                    }
+
+                    set({
+                        radarResults: {
+                            users: Array.isArray(data?.users) ? data.users : [],
+                            groups: Array.isArray(data?.groups) ? data.groups : [],
+                            searchContext: data?.searchContext || null,
+                        },
+                    });
+                } catch (e) {
+                    if (__DEV__) console.warn('[Radar] Fetch failed:', e?.message || e);
+                    set({ radarResults: { users: [], groups: [], searchContext: null } });
+             } finally {
                     set({ isRadarLoading: false });
+                }
+            },         // ← סגירה של fetchRadarData
+
+            // ==========================================
+            // 🏆 WEEKLY CHALLENGE
+            // ==========================================
+            weeklyChallenge: null,
+            isWeeklyChallengeLoading: false,
+
+            fetchWeeklyChallenge: async () => {
+                if (get().isWeeklyChallengeLoading) return;
+                set({ isWeeklyChallengeLoading: true });
+                try {
+                    const data = await fetchAPI('/weekly-challenge/active');
+                    set({ weeklyChallenge: data || null });
+                } catch (e) {
+                    if (__DEV__) console.warn('[WeeklyChallenge] Fetch failed:', e?.message);
+                } finally {
+                    set({ isWeeklyChallengeLoading: false });
                 }
             },
 

@@ -1,0 +1,302 @@
+{
+  "active_weekly_drop": "week_1_launch",
+  "filters": [
+    {
+      "id": "filter_gwapo_prime",
+      "file_name": "makeup-kim.deepar",
+      "display_name": "Gwapo Mode 😎",
+      "category": "base_beauty",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/01_base_beauty/makeup-kim.deepar"
+    },
+    {
+      "id": "filter_kliq_smooth",
+      "file_name": "MakeupLook.deepar",
+      "display_name": "Kliq Smooth 🫧",
+      "category": "base_beauty",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/01_base_beauty/MakeupLook.deepar"
+    },
+    {
+      "id": "filter_emotion_meter",
+      "file_name": "Emotion_Meter.deepar",
+      "display_name": "Emotion Meter 📊",
+      "category": "base_beauty",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/01_base_beauty/Emotion_Meter.deepar"
+    },
+    {
+      "id": "filter_crazy_face",
+      "file_name": "Emotions_Exaggerator.deepar",
+      "display_name": "Crazy Face 🤪",
+      "category": "base_beauty",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/01_base_beauty/Emotions_Exaggerator.deepar"
+    },
+    {
+      "id": "filter_split_view",
+      "file_name": "Split_View_Look.deepar",
+      "display_name": "Split View 👯",
+      "category": "base_beauty",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/01_base_beauty/Split_View_Look.deepar"
+    },
+    {
+      "id": "filter_sugbo_hugot",
+      "file_name": "burning_effect.deepar",
+      "display_name": "Sugbo Hugot 💔",
+      "category": "vibes_neon",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/02_vibes_neon/burning_effect.deepar"
+    },
+    {
+      "id": "filter_budots_rave",
+      "file_name": "Fire_Effect.deepar",
+      "display_name": "Budots Rave 🔥",
+      "category": "vibes_neon",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/02_vibes_neon/Fire_Effect.deepar"
+    },
+    {
+      "id": "filter_disco_neon",
+      "file_name": "Neon_Devil_Horns.deepar",
+      "display_name": "Disco Neon ⚡",
+      "category": "vibes_neon",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/02_vibes_neon/Neon_Devil_Horns.deepar"
+    },
+    {
+      "id": "filter_space_vibes",
+      "file_name": "galaxy_background.deepar",
+      "display_name": "Space Vibes 🌌",
+      "category": "vibes_neon",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/02_vibes_neon/galaxy_background.deepar"
+    },
+    {
+      "id": "filter_taytop_shades",
+      "file_name": "ray-ban-wayfarer.deepar",
+      "display_name": "TayTop Vibe 🕶️",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/ray-ban-wayfarer.deepar"
+    },
+    {
+      "id": "filter_anonymous_bai",
+      "file_name": "Vendetta_Mask.deepar",
+      "display_name": "Anonymous Bai 🤖",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/Vendetta_Mask.deepar"
+    },
+    {
+      "id": "filter_party_glasses",
+      "file_name": "2023-glasses.deepar",
+      "display_name": "Party Glasses 👓",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/2023-glasses.deepar"
+    },
+    {
+      "id": "filter_face_swap",
+      "file_name": "face-swap.deepar",
+      "display_name": "Suroy-Suroy Swap 🔄",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/face-swap.deepar"
+    },
+    {
+      "id": "filter_flower_power",
+      "file_name": "flower_face.deepar",
+      "display_name": "Flower Power 🌸",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/flower_face.deepar"
+    },
+    {
+      "id": "filter_pasko_santa",
+      "file_name": "santa.deepar",
+      "display_name": "Pasko Santa 🎅",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/santa.deepar"
+    },
+    {
+      "id": "filter_slow_snail",
+      "file_name": "Snail.deepar",
+      "display_name": "Slow Snail 🐌",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/Snail.deepar"
+    },
+    {
+      "id": "filter_ping_pong",
+      "file_name": "Ping_Pong.deepar",
+      "display_name": "Ping Pong 🏓",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/Ping_Pong.deepar"
+    },
+    {
+      "id": "filter_action_hero",
+      "file_name": "Stallone.deepar",
+      "display_name": "Action Hero 🤠",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/Stallone.deepar"
+    },
+    {
+      "id": "filter_wizard_bai",
+      "file_name": "harry-potter.deepar",
+      "display_name": "Wizard Bai 🧙‍♂️",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/harry-potter.deepar"
+    },
+    {
+      "id": "filter_moto_helmet",
+      "file_name": "helmet.deepar",
+      "display_name": "Rusi Rider 🪖",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/helmet.deepar"
+    },
+    {
+      "id": "filter_viking_mode",
+      "file_name": "viking_helmet.deepar",
+      "display_name": "Viking Bisaya 🪓",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/viking_helmet.deepar"
+    },
+    {
+      "id": "filter_troll_funk",
+      "file_name": "troll-funk.deepar",
+      "display_name": "Troll Funk 👹",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/troll-funk.deepar"
+    },
+    {
+      "id": "filter_troll_reggaeton",
+      "file_name": "troll-reggaeton.deepar",
+      "display_name": "Boom Troll 🎵",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/troll-reggaeton.deepar"
+    },
+    {
+      "id": "filter_bunny_ears",
+      "file_name": "bunny-ears.deepar",
+      "display_name": "Bunny Ears 🐰",
+      "category": "local_fun",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/03_local_fun/bunny-ears.deepar"
+    },
+    {
+      "id": "filter_butterfly",
+      "file_name": "butterfly-headband.deepar",
+      "display_name": "Butterfly 🦋",
+      "category": "brand_pop",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/04_brand_pop/butterfly-headband.deepar"
+    },
+    {
+      "id": "filter_virtual_pet",
+      "file_name": "cute-virtual-pet.deepar",
+      "display_name": "Virtual Pet 🐶",
+      "category": "brand_pop",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/04_brand_pop/cute-virtual-pet.deepar"
+    },
+    {
+      "id": "filter_elephant",
+      "file_name": "Elephant_Trunk.deepar",
+      "display_name": "Elephant Bai 🐘",
+      "category": "brand_pop",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/04_brand_pop/Elephant_Trunk.deepar"
+    },
+    {
+      "id": "filter_cyborg",
+      "file_name": "Humanoid.deepar",
+      "display_name": "Cyborg 🦾",
+      "category": "brand_pop",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/04_brand_pop/Humanoid.deepar"
+    },
+    {
+      "id": "filter_football",
+      "file_name": "nfl-helmet-red.deepar",
+      "display_name": "Football 🏈",
+      "category": "brand_pop",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/04_brand_pop/nfl-helmet-red.deepar"
+    },
+    {
+      "id": "filter_pixel_hearts",
+      "file_name": "Pixel_Hearts.deepar",
+      "display_name": "Gugma Hearts ❤️",
+      "category": "brand_pop",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/04_brand_pop/Pixel_Hearts.deepar"
+    },
+    {
+      "id": "filter_hope_avatar",
+      "file_name": "Hope.deepar",
+      "display_name": "Hope Avatar ✨",
+      "category": "brand_pop",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/04_brand_pop/Hope.deepar"
+    },
+    {
+      "id": "filter_hype_kicks",
+      "file_name": "airmax.deepar",
+      "display_name": "Hype Kicks 👟",
+      "category": "brand_pop",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/04_brand_pop/airmax.deepar"
+    },
+    {
+      "id": "filter_cyber_budots",
+      "file_name": "neon_edges.deepar",
+      "display_name": "Cyber Budots 🤖",
+      "category": "color_luts",
+      "is_always_available": true,
+      "thumbnail_url": null,
+      "file_url": "https://api.kliqtap.com/uploads/filters/05_color_luts/neon_edges.deepar"
+    }
+  ]
+}

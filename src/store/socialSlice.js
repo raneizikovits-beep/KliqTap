@@ -236,11 +236,16 @@ const createSocialSlice = (set, get) => ({
 
     deletePost: async (postId) => {
         const sid = String(postId);
-        const prevState = { posts: get().posts, currentGroupPosts: get().currentGroupPosts };
+        const prevState = {
+            posts: get().posts,
+            pulses: get().pulses,
+            currentGroupPosts: get().currentGroupPosts,
+        };
 
-        // Optimistic removal
+        // Optimistic removal from ALL feeds
         set(state => ({
-            posts: state.posts.filter(p => String(p.id) !== sid),
+            posts:             state.posts.filter(p => String(p.id) !== sid),
+            pulses:            state.pulses.filter(p => String(p.id) !== sid),
             currentGroupPosts: state.currentGroupPosts.filter(p => String(p.id) !== sid),
         }));
 
@@ -272,9 +277,12 @@ const createSocialSlice = (set, get) => ({
     // ============================================================
     // COMMENTS — ⭐️ FIXED: no hardcoded URL, supports image, web-safe
     // ============================================================
-    createComment: async (postId, text, imageUri = null) => {
+    // storeId: the ID used to locate the post/pulse in the local store (may differ from postId when
+    //          postId is the linked Post ID but the store entry has the Pulse ID).
+    createComment: async (postId, text, imageUri = null, storeId = null) => {
         if ((!text || !text.trim()) && !imageUri) return false;
-        const sid = String(postId);
+        const sid  = String(postId);           // used for the API call (Post ID)
+        const ssid = String(storeId || postId); // used for store mutation (Pulse ID or Post ID)
 
         try {
             // Uses SocialService → fetchAPI → proper auth/refresh/error flow
@@ -295,18 +303,16 @@ const createSocialSlice = (set, get) => ({
                 ...response,
             };
 
-            // Inject into matching post in both feeds
+            // Inject into matching post in ALL feeds (posts, pulses, currentGroupPosts).
+            // Match on BOTH ssid (pulse/store ID) and sid (post API ID) to cover all cases.
+            const matchId = (p) => String(p.id) === ssid || String(p.id) === sid;
+            const addTo   = (arr) => arr.map(p =>
+                matchId(p) ? { ...p, comments: [...(p.comments || []), optimisticComment] } : p
+            );
             set(state => ({
-                posts: state.posts.map(p =>
-                    String(p.id) === sid
-                        ? { ...p, comments: [...(p.comments || []), optimisticComment] }
-                        : p
-                ),
-                currentGroupPosts: state.currentGroupPosts.map(p =>
-                    String(p.id) === sid
-                        ? { ...p, comments: [...(p.comments || []), optimisticComment] }
-                        : p
-                ),
+                posts:             addTo(state.posts),
+                pulses:            addTo(state.pulses),
+                currentGroupPosts: addTo(state.currentGroupPosts),
             }));
 
             get().award?.('Comment');
@@ -318,42 +324,47 @@ const createSocialSlice = (set, get) => ({
         }
     },
 
-    deleteComment: async (postId, commentId) => {
-        const psid = String(postId);
-        const csid = String(commentId);
+    deleteComment: async (postId, commentId, storeId = null) => {
+        const psid  = String(postId);
+        const pssid = String(storeId || postId);
+        const csid  = String(commentId);
         try {
             await SocialService.deleteComment(csid);
-            // Optimistic removal without full refetch
+            // Match on BOTH store ID and API post ID
+            const removeComment = (arr) =>
+                arr.map(p =>
+                    (String(p.id) === pssid || String(p.id) === psid)
+                        ? { ...p, comments: (p.comments || []).filter(c => String(c.id) !== csid) }
+                        : p
+                );
             set(state => ({
-                posts: state.posts.map(p => String(p.id) === psid
-                    ? { ...p, comments: (p.comments || []).filter(c => String(c.id) !== csid) }
-                    : p
-                ),
-                currentGroupPosts: state.currentGroupPosts.map(p => String(p.id) === psid
-                    ? { ...p, comments: (p.comments || []).filter(c => String(c.id) !== csid) }
-                    : p
-                ),
+                posts:             removeComment(state.posts),
+                pulses:            removeComment(state.pulses),
+                currentGroupPosts: removeComment(state.currentGroupPosts),
             }));
         } catch (e) {
             Alert.alert('Error', 'Failed to delete comment.');
         }
     },
 
-    editComment: async (postId, commentId, newText) => {
-        const psid = String(postId);
-        const csid = String(commentId);
+    editComment: async (postId, commentId, newText, storeId = null) => {
+        const psid  = String(postId);
+        const pssid = String(storeId || postId);
+        const csid  = String(commentId);
         try {
             await SocialService.editComment(csid, newText);
+            const updateComment = (arr) =>
+                arr.map(p =>
+                    (String(p.id) === pssid || String(p.id) === psid)
+                        ? { ...p, comments: (p.comments || []).map(c =>
+                                String(c.id) === csid ? { ...c, text: newText, edited: true } : c
+                            )}
+                        : p
+                );
             set(state => ({
-                posts: state.posts.map(p => String(p.id) === psid
-                    ? {
-                        ...p,
-                        comments: (p.comments || []).map(c =>
-                            String(c.id) === csid ? { ...c, text: newText, edited: true } : c
-                        ),
-                    }
-                    : p
-                ),
+                posts:             updateComment(state.posts),
+                pulses:            updateComment(state.pulses),
+                currentGroupPosts: updateComment(state.currentGroupPosts),
             }));
         } catch (e) {
             Alert.alert('Error', 'Failed to update comment.');
@@ -372,13 +383,14 @@ const createSocialSlice = (set, get) => ({
 
             const mappedGroups = newGroups.map(group => {
                 const isOwner =
-                    String(group.ownerId) === currentUserId ||
-                    String(group.owner?.id) === currentUserId;
+                    String(group.ownerId)     === currentUserId ||
+                    String(group.owner?.id)   === currentUserId ||
+                    String(group.created_by)  === currentUserId;
                 const safeMembers = Array.isArray(group.members) ? group.members : [];
                 const isMember = safeMembers.some(m =>
-                    String(m.userId) === currentUserId ||
-                    String(m.user?.id) === currentUserId ||
-                    String(m.id) === currentUserId
+                    String(m.userId)    === currentUserId ||
+                    String(m.user?.id)  === currentUserId ||
+                    String(m.id)        === currentUserId
                 ) || isOwner;
                 const isAdmin = isOwner || safeMembers.some(m =>
                     (String(m.userId) === currentUserId || String(m.user?.id) === currentUserId) && m.isAdmin
@@ -386,6 +398,8 @@ const createSocialSlice = (set, get) => ({
                 return { ...group, isMember, isAdmin };
             });
 
+            // ✅ simple replace — השרת הוא source of truth.
+            // אין merge כדי למנוע "zombie groups" שגורמים ל-Leave failures.
             set({ groups: mappedGroups });
         } catch (e) {
             if (__DEV__) console.warn('[SocialSlice] fetchGroups error:', e?.message);
@@ -426,8 +440,11 @@ const createSocialSlice = (set, get) => ({
         if (!groupData?.name?.trim()) throw new Error('Missing group name');
         const newGroup = await SocialService.createGroup(groupData);
         if (newGroup) {
-            set(state => ({ groups: [newGroup, ...state.groups] }));
-            // refresh explore data if available
+            // ✅ הוסף isMember+isAdmin מיד — היוצר הוא תמיד admin ו-member
+            const optimisticGroup = { ...newGroup, isMember: true, isAdmin: true };
+            set(state => ({ groups: [optimisticGroup, ...state.groups] }));
+            // ✅ fetchGroups (לא fetchExploreData) — מסנכרן groups עם השרת
+            get().fetchGroups?.();
             get().fetchExploreData?.();
         }
         return newGroup;

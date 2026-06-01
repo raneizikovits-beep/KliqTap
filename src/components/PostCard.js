@@ -253,7 +253,7 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
       if (confirmed && deletePost) deletePost(postIdToDelete);
     } else {
       Alert.alert(
-        'Delete Post', 'Are you sure you want to delete this post?',
+        'Delete Kliq Feed', 'Are you sure you want to delete this post?',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Delete', style: 'destructive', onPress: () => deletePost(postIdToDelete) },
@@ -470,11 +470,11 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
             <View style={[globalStyles.cardModal, localStyles.menuModalCard, { backgroundColor: isDark ? '#1C1C1E' : '#fff' }]}>
               <TouchableOpacity onPress={handleOpenEdit} style={[localStyles.menuOptionRow, { borderBottomColor: isDark ? '#333' : '#eee' }]}>
                 <Ionicons name="pencil" size={18} color={isDark ? '#fff' : '#000'} style={localStyles.menuOptionIcon} />
-                <Text style={{ color: isDark ? '#fff' : '#000' }}>Edit Post</Text>
+                <Text style={{ color: isDark ? '#fff' : '#000' }}>Edit Kliq Feed</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={handleDelete} style={[localStyles.menuOptionRow, { borderBottomWidth: 0 }]}>
                 <Ionicons name="trash" size={18} color={brand.red} style={localStyles.menuOptionIcon} />
-                <Text style={localStyles.menuDangerText}>Delete Post</Text>
+                <Text style={localStyles.menuDangerText}>Delete Kliq Feed</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -488,7 +488,7 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
               <View style={[globalStyles.cardModal, localStyles.editModalCard, { backgroundColor: isDark ? '#121212' : '#fff' }]}>
 
                 <ScrollView contentContainerStyle={localStyles.editScrollContent} keyboardShouldPersistTaps="handled">
-                  <Text style={[globalStyles.h1, { color: isDark ? '#fff' : '#000' }]}>Edit Post</Text>
+                  <Text style={[globalStyles.h1, { color: isDark ? '#fff' : '#000' }]}>Edit Kliq Feed</Text>
 
                   <TextInput
                     style={[
@@ -574,7 +574,7 @@ const localStyles = StyleSheet.create({
   shareOptionIcon: { marginRight: 10 },
   shareOptionTitle: { fontSize: 16, fontWeight: '600' },
   shareOptionSub: { fontSize: 12 },
-  menuModalCard: { position: 'absolute', top: 60, right: 20, width: 200, padding: 0 },
+  menuModalCard: { alignSelf: 'center', marginTop: 'auto', marginBottom: 'auto', width: 250, padding: 0 },
   menuOptionRow: { padding: 15, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center' },
   menuOptionIcon: { marginRight: 10 },
   menuDangerText: { color: brand.red },

@@ -1,214 +1,586 @@
 // client/src/components/SupportSheet.js
-// ⭐️ ULTIMATE CONCIERGE VERSION: Real-time Tickets, Modern UI & Wellness Hub ⭐️
+// 🌿 V4.2 PRODUCTION: KliqTap Wellness Hub (Fully Wired + Pull-to-Refresh)
+//
+// What's new:
+//   • Added Pull-to-Refresh with Haptic Feedback.
+//   • Refreshes Tickets, Mood History, and Wellness Stats directly from the server.
+//   • Fully dark mode compliant.
 
-import React, { useEffect, memo } from 'react';
-import { 
-    View, Text, ScrollView, TouchableOpacity, 
-    StyleSheet, ActivityIndicator, Alert 
+import React, { useEffect, useState, useCallback, memo } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Alert, Linking, Platform, RefreshControl
 } from 'react-native';
-import { brand } from '../constants/data';
-import { SupportCard } from '../components/CommonComponents'; 
-import { useAppStore } from '../store/useAppStore';
 import { Ionicons } from '@expo/vector-icons';
+import { brand } from '../constants/data';
+import { useAppStore } from '../store/useAppStore';
+import * as Haptics from 'expo-haptics'; 
 
+// ─── Safe Haptics Wrappers ─────────────────────────────────────────
+const safeHaptic = async (style) => {
+    try { if (Haptics) await Haptics.impactAsync(style); } catch (e) {}
+};
+
+const safeHapticNotify = async (type) => {
+    try { if (Haptics) await Haptics.notificationAsync(type); } catch (e) {}
+};
+
+// ─── Mood options (matches server enum) ────────────────────────────
+const MOODS = [
+  { id: 'great', emoji: '😄', label: 'Great', color: '#10B981' },
+  { id: 'good',  emoji: '🙂', label: 'Good',  color: '#3B82F6' },
+  { id: 'okay',  emoji: '😐', label: 'Okay',  color: '#F59E0B' },
+  { id: 'down',  emoji: '😔', label: 'Down',  color: '#8B5CF6' },
+  { id: 'rough', emoji: '😞', label: 'Rough', color: '#EF4444' },
+];
+
+// ─── Crisis hotlines (real, verified) ─────────────────────────────
+const CRISIS_RESOURCES = [
+  { country: 'US', name: '988 Suicide & Crisis Lifeline', phone: '988' },
+  { country: 'IL', name: 'ERAN — Emotional First Aid', phone: '1201' },
+  { country: 'PH', name: 'NCMH Crisis Hotline', phone: '1553' },
+  { country: 'UK', name: 'Samaritans', phone: '116123' },
+  { country: 'WW', name: 'International Crisis Lines', phone: 'https://findahelpline.com' },
+];
+
+// ─── Daily affirmations (rotating) ─────────────────────────────────
+const AFFIRMATIONS = [
+  'You are stronger than you think.',
+  'One breath at a time.',
+  'This feeling will pass.',
+  'You belong here.',
+  'Small steps still move forward.',
+  'Your story is still being written.',
+  'Rest is productive too.',
+  'You don\'t have to be perfect to be loved.',
+];
+
+const getStatusColor = (status) => {
+  switch (status) {
+    case 'OPEN':        return brand.blue;
+    case 'IN_PROGRESS': return brand.orange || '#F59E0B';
+    case 'RESOLVED':    return brand.green;
+    default:            return '#888';
+  }
+};
+
+// ─── Sub-component: Mood Check-in ──────────────────────────────────
+const MoodCheckIn = memo(({ todayMood, onSelect, isDark }) => (
+  <View style={[styles.moodCard, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#333' : '#F1F5F9' }]}>
+    <View style={styles.moodHeader}>
+      <Text style={[styles.moodTitle, { color: isDark ? '#fff' : '#0F172A' }]}>How are you feeling today?</Text>
+      {todayMood && <Text style={styles.moodCheck}>✓ Logged</Text>}
+    </View>
+    <View style={styles.moodRow}>
+      {MOODS.map((m) => {
+        const selected = todayMood === m.id;
+        return (
+          <TouchableOpacity
+            key={m.id}
+            style={[
+              styles.moodBtn,
+              { backgroundColor: isDark ? '#2C2C2E' : '#F8FAFC' },
+              selected && { backgroundColor: m.color + '22', borderColor: m.color, borderWidth: 2 },
+            ]}
+            onPress={() => onSelect(m)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.moodEmoji}>{m.emoji}</Text>
+            <Text style={[styles.moodLabel, { color: isDark ? '#aaa' : '#64748B' }, selected && { color: m.color, fontWeight: '900' }]}>
+              {m.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  </View>
+));
+
+// ─── Sub-component: Quick Tool Card ───────────────────────────────
+const ToolCard = memo(({ icon, title, subtitle, color, onPress, isDark }) => (
+  <TouchableOpacity 
+    style={[styles.toolCard, { backgroundColor: isDark ? color + '15' : color + '15' }]} 
+    onPress={onPress} 
+    activeOpacity={0.7}
+  >
+    <View style={[styles.toolIconCircle, { backgroundColor: color }]}>
+      <Ionicons name={icon} size={22} color="#fff" />
+    </View>
+    <Text style={[styles.toolTitle, { color: isDark ? '#fff' : '#0F172A' }]}>{title}</Text>
+    <Text style={[styles.toolSubtitle, { color: isDark ? '#aaa' : '#64748B' }]}>{subtitle}</Text>
+  </TouchableOpacity>
+));
+
+// ─── Sub-component: Ticket Card ───────────────────────────────────
+const TicketCard = memo(({ ticket, onPress, isDark }) => (
+  <TouchableOpacity 
+    style={[styles.ticketCard, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#333' : '#F1F5F9' }]} 
+    onPress={onPress} 
+    activeOpacity={0.7}
+  >
+    <View style={styles.ticketHeader}>
+      <View style={[styles.statusDot, { backgroundColor: getStatusColor(ticket.status) }]} />
+      <Text style={styles.ticketDate}>
+        {new Date(ticket.createdAt).toLocaleDateString()}
+      </Text>
+    </View>
+    <Text style={[styles.ticketSubject, { color: isDark ? '#fff' : '#1E293B' }]} numberOfLines={2}>{ticket.subject}</Text>
+    <Text style={[styles.ticketStatus, { color: getStatusColor(ticket.status) }]}>
+      {ticket.status?.replace('_', ' ') || 'OPEN'}
+    </Text>
+  </TouchableOpacity>
+));
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════
 const SupportSheet = ({ setSecondSheet, setThirdSheet }) => {
-  // חיבור ללוגיקה החדשה ב-Store
-  const { 
-      points, streak, badges, 
-      supportTickets, isSupportLoading, fetchMyTickets 
+  const {
+    // Tickets
+    supportTickets, isSupportLoading, fetchMyTickets,
+    // Wellness
+    todayMood, wellnessStats, logMood, fetchMoodHistory, fetchWellnessStats,
+    // Reputation & Settings
+    points, streak, badges, userSettings
   } = useAppStore();
 
-  // טעינת הפניות מהשרת ברגע שהמסך נפתח[cite: 11]
-  useEffect(() => { 
-      if (fetchMyTickets) fetchMyTickets(); 
-  }, [fetchMyTickets]);
+  const isDark = userSettings?.darkMode === true;
 
-  // פונקציית עזר לצבעי סטטוס[cite: 11]
-  const getStatusColor = (status) => {
-    switch (status) {
-        case 'OPEN': return brand.blue;
-        case 'IN_PROGRESS': return brand.orange;
-        case 'RESOLVED': return brand.green;
-        default: return '#888';
+  const [affirmation] = useState(
+    () => AFFIRMATIONS[Math.floor(Math.random() * AFFIRMATIONS.length)],
+  );
+  
+  // State for Pull-to-Refresh
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    fetchMyTickets?.();
+    fetchMoodHistory?.(30);
+    fetchWellnessStats?.();
+  }, [fetchMyTickets, fetchMoodHistory, fetchWellnessStats]);
+
+  // Handle Pull-to-Refresh action
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    safeHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    
+    try {
+      await Promise.all([
+        fetchMyTickets?.(),
+        fetchMoodHistory?.(30),
+        fetchWellnessStats?.()
+      ]);
+    } catch (error) {
+      if (__DEV__) console.warn('[SupportSheet] Refresh failed:', error);
+    } finally {
+      setRefreshing(false);
+      safeHapticNotify(Haptics.NotificationFeedbackType.Success);
     }
-  };
+  }, [fetchMyTickets, fetchMoodHistory, fetchWellnessStats]);
+
+  const handleClose = useCallback(() => {
+    if (setThirdSheet) setThirdSheet(null);
+    if (setSecondSheet) setSecondSheet(null);
+  }, [setThirdSheet, setSecondSheet]);
+
+  const handleMoodSelect = useCallback(async (mood) => {
+    try {
+      safeHaptic(Haptics.ImpactFeedbackStyle.Light);
+      await logMood?.(mood.id);
+    } catch (e) {
+      Alert.alert('Could not save', 'Your mood will be remembered locally.');
+    }
+  }, [logMood]);
+
+  const handleCrisisCall = useCallback(() => {
+    Alert.alert(
+      '🆘 Crisis Resources',
+      'If you are in immediate danger, please contact one of these lines:',
+      [
+        ...CRISIS_RESOURCES.map((r) => ({
+          text: `${r.name} (${r.country})`,
+          onPress: () => {
+            if (r.phone.startsWith('http')) {
+              Linking.openURL(r.phone);
+            } else {
+              Linking.openURL(`tel:${r.phone}`);
+            }
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }, []);
+
+  // ── Route Handlers ────────────────────────────────────
+  const openTool = useCallback((toolName) => {
+    // Routes to the MentalSpace menu (breathing, sounds, affirmation)
+    setThirdSheet?.({ source: 'MentalSpace', tool: toolName });
+  }, [setThirdSheet]);
+
+  const openNewTicket = useCallback(() => {
+    // Opens the newly built CreateTicketScreen
+    setThirdSheet?.({ source: 'CreateTicket', title: 'New Support Request' });
+  }, [setThirdSheet]);
+
+  const openJournal = useCallback(() => {
+    // Opens the newly built Wellness Journal screen
+    setThirdSheet?.({ source: 'Journal', title: 'Wellness Journal' });
+  }, [setThirdSheet]);
 
   return (
-    <ScrollView 
-        contentContainerStyle={localStyles.scrollContent}
-        showsVerticalScrollIndicator={false}
-    >
-      {/* ⭐️ 1. HERO SECTION: Welcome & Branding ⭐️ */}
-      <View style={localStyles.hero}>
-        <View style={localStyles.heroTextWrapper}>
-            <Text style={localStyles.heroTitle}>KliqTap Concierge</Text>
-            <Text style={localStyles.heroSub}>Your premium support and wellness hub.</Text>
-        </View>
-        <Ionicons name="shield-checkmark" size={60} color="rgba(33, 150, 243, 0.1)" style={localStyles.heroIcon} />
+    <View style={[styles.mainContainer, { backgroundColor: isDark ? '#000' : '#fff' }]}>
+      {/* ════════ 0. Header with 'X' Button ════════ */}
+      <View style={[styles.headerTop, { backgroundColor: isDark ? '#121212' : '#F0F9FF' }]}>
+          <Text style={[styles.title, { color: isDark ? '#fff' : '#0F172A' }]}>Wellness Hub</Text>
+          <TouchableOpacity 
+              onPress={handleClose} 
+              style={[styles.closeBtn, { backgroundColor: isDark ? '#333' : '#E2E8F0' }]}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+          >
+              <Ionicons name="close" size={24} color={isDark ? '#ccc' : "#475569"} />
+          </TouchableOpacity>
       </View>
 
-      {/* ⭐️ 2. MY REQUESTS: Horizontal Ticket Tracking ⭐️ */}
-      <View style={localStyles.sectionWrapper}>
-        <View style={localStyles.sectionHeader}>
-            <Text style={localStyles.sectionTitle}>ACTIVE REQUESTS</Text>
-            {isSupportLoading && <ActivityIndicator size="small" color={brand.blue} />}
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        // ⭐️ Pull to Refresh Control ⭐️
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            tintColor={isDark ? '#fff' : brand.blue} 
+            colors={[brand.blue, brand.purple]} 
+          />
+        }
+      >
+        {/* ════════ 1. Hero + Affirmation ════════ */}
+        <View style={[styles.hero, { backgroundColor: isDark ? '#121212' : '#F0F9FF' }]}>
+          <Text style={[styles.heroSubtitle, { color: isDark ? '#aaa' : '#64748B' }]}>Tools to support your day</Text>
+          <View style={[styles.affirmationBox, { backgroundColor: isDark ? '#1C1C1E' : '#fff' }]}>
+            <Text style={[styles.affirmationQuote, { color: isDark ? '#ddd' : '#334155' }]}>"{affirmation}"</Text>
+          </View>
         </View>
-        
-        <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={localStyles.horizontalScroll}
-            contentContainerStyle={localStyles.horizontalContent}
-        >
-            {/* כפתור פתיחת פנייה חדשה[cite: 11] */}
+
+        {/* ════════ 2. Disclaimer Banner ════════ */}
+        <View style={[styles.disclaimer, { backgroundColor: isDark ? '#1C1C1E' : '#F8FAFC' }]}>
+          <Ionicons name="information-circle" size={16} color="#64748B" />
+          <Text style={styles.disclaimerText}>
+            KliqTap Wellness offers support tools, not medical or therapy services.{' '}
+            If you're in crisis, please reach out below.
+          </Text>
+        </View>
+
+        {/* ════════ 3. Mood Check-in ════════ */}
+        <MoodCheckIn todayMood={todayMood} onSelect={handleMoodSelect} isDark={isDark} />
+
+        {/* ════════ 4. Wellness Stats ════════ */}
+        {wellnessStats && (wellnessStats.streak > 0 || wellnessStats.thisWeek?.moodCheckins > 0) && (
+          <View style={[styles.statsCard, { backgroundColor: isDark ? '#1C1C1E' : '#F0F9FF' }]}>
+            <Text style={styles.sectionTitle}>YOUR WELLNESS WEEK</Text>
+            <View style={styles.statsRow}>
+              <View style={styles.statBox}>
+                <Text style={[styles.statValue, { color: isDark ? '#fff' : '#0F172A' }]}>{wellnessStats.streak} 🔥</Text>
+                <Text style={[styles.statLabel, { color: isDark ? '#aaa' : '#64748B' }]}>Day Streak</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={[styles.statValue, { color: isDark ? '#fff' : '#0F172A' }]}>{wellnessStats.thisWeek?.moodCheckins || 0}</Text>
+                <Text style={[styles.statLabel, { color: isDark ? '#aaa' : '#64748B' }]}>Check-ins</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={[styles.statValue, { color: isDark ? '#fff' : '#0F172A' }]}>{wellnessStats.thisWeek?.meditationMinutes || 0}m</Text>
+                <Text style={[styles.statLabel, { color: isDark ? '#aaa' : '#64748B' }]}>Mindful</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* ════════ 5. Quick Tools ════════ */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>QUICK TOOLS</Text>
+          <View style={styles.toolGrid}>
+            <ToolCard
+              icon="leaf-outline"
+              title="Breathe"
+              subtitle="4-7-8 method"
+              color="#10B981"
+              onPress={() => openTool('breathe')}
+              isDark={isDark}
+            />
+            <ToolCard
+              icon="book-outline"
+              title="Journal"
+              subtitle="Write it out"
+              color="#8B5CF6"
+              onPress={openJournal}
+              isDark={isDark}
+            />
+            <ToolCard
+              icon="musical-notes-outline"
+              title="Sounds"
+              subtitle="Calm your mind"
+              color="#3B82F6"
+              onPress={() => openTool('sounds')}
+              isDark={isDark}
+            />
+            <ToolCard
+              icon="heart-outline"
+              title="Affirmation"
+              subtitle="A gentle thought"
+              color="#EC4899"
+              onPress={() => openTool('affirmation')}
+              isDark={isDark}
+            />
+          </View>
+        </View>
+
+        {/* ════════ 6. Crisis Resources ════════ */}
+        <TouchableOpacity style={styles.crisisCard} onPress={handleCrisisCall} activeOpacity={0.8}>
+          <View style={styles.crisisLeft}>
+            <Ionicons name="alert-circle" size={28} color="#fff" />
+          </View>
+          <View style={styles.crisisRight}>
+            <Text style={styles.crisisTitle}>Need urgent help?</Text>
+            <Text style={styles.crisisSubtitle}>View crisis resources — 24/7</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color="#fff" />
+        </TouchableOpacity>
+
+        {/* ════════ 7. Support Tickets ════════ */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>YOUR REQUESTS</Text>
+            {isSupportLoading && !refreshing && <ActivityIndicator size="small" color={brand.blue} />}
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.ticketsScroll}>
             <TouchableOpacity 
-                style={localStyles.newTicketBtn}
-                onPress={() => setThirdSheet({ 
-                    source: "CreateTicket", 
-                    title: "New Support Request" 
-                })}
+              style={[styles.newTicketBtn, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#3B82F6' : brand.blue }]} 
+              onPress={openNewTicket} 
+              activeOpacity={0.7}
             >
-                <View style={localStyles.addIconCircle}>
-                    <Ionicons name="add" size={28} color={brand.blue} />
-                </View>
-                <Text style={localStyles.newTicketText}>New Request</Text>
+              <View style={[styles.addCircle, { backgroundColor: isDark ? '#3B82F633' : '#E0F2FE' }]}>
+                <Ionicons name="add" size={26} color={brand.blue} />
+              </View>
+              <Text style={styles.newTicketText}>New Request</Text>
             </TouchableOpacity>
 
-            {/* רשימת פניות קיימות[cite: 11] */}
-            {supportTickets && supportTickets.map((ticket) => (
-                <TouchableOpacity 
-                    key={String(ticket.id)} 
-                    style={localStyles.ticketCard}
-                    onPress={() => setThirdSheet({ 
-                        source: "TicketDetails", 
-                        ticket: ticket, 
-                        title: "Request Details" 
-                    })}
-                >
-                    <View style={localStyles.ticketHeader}>
-                        <View style={[localStyles.statusDot, { backgroundColor: getStatusColor(ticket.status) }]} />
-                        <Text style={localStyles.ticketDate}>
-                            {new Date(ticket.createdAt).toLocaleDateString()}
-                        </Text>
-                    </View>
-                    <Text style={localStyles.ticketSubject} numberOfLines={2}>{ticket.subject}</Text>
-                    <View style={localStyles.statusBadge}>
-                        <Text style={[localStyles.statusText, { color: getStatusColor(ticket.status) }]}>
-                            {ticket.status.replace('_', ' ')}
-                        </Text>
-                    </View>
-                </TouchableOpacity>
+            {supportTickets?.map((ticket) => (
+              <TicketCard
+                key={String(ticket.id)}
+                ticket={ticket}
+                isDark={isDark}
+                onPress={() => {
+                  Alert.alert("Coming Soon", "Ticket details screen is being built.");
+                }}
+              />
             ))}
 
-            {supportTickets?.length === 0 && !isSupportLoading && (
-                <View style={localStyles.emptyTicketsBox}>
-                    <Text style={localStyles.emptyText}>No active requests found.</Text>
-                </View>
+            {(!supportTickets || supportTickets.length === 0) && !isSupportLoading && (
+              <View style={styles.emptyTickets}>
+                <Text style={styles.emptyText}>No requests yet.</Text>
+                <Text style={styles.emptyHint}>Tap + to start a conversation.</Text>
+              </View>
             )}
-        </ScrollView>
-      </View>
-
-      {/* ⭐️ 3. WELLNESS & SAFETY: Deep Resources ⭐️ */}
-      <View style={localStyles.sectionWrapper}>
-        <Text style={localStyles.sectionTitle}>WELLNESS & SAFETY</Text>
-        <View style={localStyles.toolsGrid}>
-            <SupportCard 
-                title="Mental Health Support" 
-                desc="Breathe, focus, and find your center." 
-                // ⭐️ התיקון הקריטי: זה פותח את המרחב המנטלי (SupportScreen) ⭐️
-                onPress={() => setThirdSheet({ source: "MentalSpace" })} 
-            />
-            <SupportCard 
-                title="Privacy & Safety" 
-                desc="Review blocked users and security settings." 
-                onPress={() => setThirdSheet({ title: "Privacy Center", body: "Manage your safety settings here." })} 
-            />
-            <SupportCard 
-                title="Crisis Resources" 
-                desc="24/7 emergency hotlines and local help." 
-                onPress={() => Alert.alert("Emergency Hotlines", "National crisis line: 988\n\nIf you are in immediate danger, please call your local emergency number.")} 
-            />
-            <SupportCard 
-                title="Community Guidelines" 
-                desc="Learn how we keep KliqTap a kind place." 
-                onPress={() => Alert.alert("Guidelines", "Loading legal documents...")} 
-            />
+          </ScrollView>
         </View>
-      </View>
 
-      {/* ⭐️ 4. REPUTATION SUMMARY ⭐️ */}
-      <View style={localStyles.footerStats}>
-        <Text style={localStyles.footerLabel}>COMMUNITY REPUTATION</Text>
-        <View style={localStyles.statsRow}>
-            <View style={localStyles.statItem}>
-                <Text style={localStyles.statValue}>{points}</Text>
-                <Text style={localStyles.statLabel}>Points</Text>
-            </View>
-            <View style={localStyles.statItem}>
-                <Text style={localStyles.statValue}>{streak} 🔥</Text>
-                <Text style={localStyles.statLabel}>Streak</Text>
-            </View>
-            <View style={localStyles.statItem}>
-                <Text style={localStyles.statValue}>{badges?.length || 0}</Text>
-                <Text style={localStyles.statLabel}>Badges</Text>
-            </View>
+        {/* ════════ 8. Learn & Grow ════════ */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>LEARN & GROW</Text>
+          <View style={styles.learnGrid}>
+            {[
+              { emoji: '😴', title: 'Better Sleep', text: 'Coming soon — gentle sleep habits to try tonight.' },
+              { emoji: '💧', title: 'Hydration', text: 'Coming soon — simple reminders to drink more water.' },
+              { emoji: '🏃', title: 'Movement', text: 'Coming soon — easy stretches you can do anywhere.' },
+              { emoji: '🤝', title: 'Community', text: 'How we keep KliqTap a kind place. Be respectful, be real, be safe.' },
+            ].map((item, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={[styles.learnCard, { backgroundColor: isDark ? '#1C1C1E' : '#F8FAFC' }]}
+                onPress={() => Alert.alert(item.title, item.text)}
+              >
+                <Text style={styles.learnEmoji}>{item.emoji}</Text>
+                <Text style={[styles.learnTitle, { color: isDark ? '#fff' : '#0F172A' }]}>{item.title}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
-      </View>
-      
-      <View style={{ height: 100 }} />
-    </ScrollView>
+
+        {/* ════════ 9. Reputation Footer ════════ */}
+        <View style={styles.footerStats}>
+          <Text style={styles.footerLabel}>COMMUNITY REPUTATION</Text>
+          <View style={styles.footerRow}>
+            <View style={styles.footerStat}>
+              <Text style={styles.footerValue}>{points || 0}</Text>
+              <Text style={styles.footerStatLabel}>Points</Text>
+            </View>
+            <View style={styles.footerStat}>
+              <Text style={styles.footerValue}>{streak || 0} 🔥</Text>
+              <Text style={styles.footerStatLabel}>Streak</Text>
+            </View>
+            <View style={styles.footerStat}>
+              <Text style={styles.footerValue}>{badges?.length || 0}</Text>
+              <Text style={styles.footerStatLabel}>Badges</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={{ height: 80 }} />
+      </ScrollView>
+    </View>
   );
 };
 
-// --- STYLES ---[cite: 11]
-const localStyles = StyleSheet.create({
-  scrollContent: { paddingBottom: 50, backgroundColor: '#fff' },
-  hero: { 
-      padding: 30, backgroundColor: '#F4F9FF', borderBottomRightRadius: 50, 
-      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', overflow: 'hidden'
+// ═══════════════════════════════════════════════════════════════════
+// STYLES
+// ═══════════════════════════════════════════════════════════════════
+const styles = StyleSheet.create({
+  mainContainer: { 
+    flex: 1, 
+    borderTopLeftRadius: 30, 
+    borderTopRightRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 10,
+    overflow: 'hidden',
   },
-  heroTextWrapper: { flex: 1, zIndex: 2 },
-  heroTitle: { fontSize: 28, fontWeight: '900', color: '#1A1A1A', letterSpacing: -0.5 },
-  heroSub: { fontSize: 15, color: '#666', marginTop: 6, lineHeight: 20 },
-  heroIcon: { position: 'absolute', right: -10, bottom: -10 },
-  sectionWrapper: { marginTop: 30, paddingHorizontal: 20 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  sectionTitle: { fontSize: 12, fontWeight: 'bold', color: '#BBB', letterSpacing: 1.5 },
-  horizontalScroll: { marginHorizontal: -20 },
-  horizontalContent: { paddingHorizontal: 20, gap: 12 },
-  newTicketBtn: { 
-      width: 120, height: 140, borderRadius: 24, backgroundColor: '#fff', 
-      borderStyle: 'dashed', borderWidth: 2, borderColor: brand.blue, 
-      justifyContent: 'center', alignItems: 'center' 
+  headerTop: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingHorizontal: 24, 
+    paddingTop: 24, 
+    paddingBottom: 15,
   },
-  addIconCircle: { 
-      width: 44, height: 44, borderRadius: 22, backgroundColor: '#E3F2FD', 
-      justifyContent: 'center', alignItems: 'center', marginBottom: 10 
+  title: { fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
+  closeBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+
+  scrollContent: { paddingBottom: 50 },
+
+  // Hero
+  hero: { padding: 24, paddingTop: 0, paddingBottom: 20 },
+  heroSubtitle: { fontSize: 14, marginTop: 4 },
+  affirmationBox: {
+    marginTop: 16, padding: 14, borderRadius: 16,
+    borderLeftWidth: 4, borderLeftColor: brand.blue,
   },
-  newTicketText: { color: brand.blue, fontWeight: '800', fontSize: 13 },
-  ticketCard: { 
-      width: 180, height: 140, borderRadius: 24, backgroundColor: '#fff', 
-      padding: 18, elevation: 5, shadowColor: '#000', shadowOpacity: 0.08, 
-      shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, borderWidth: 1, borderColor: '#F0F0F0'
+  affirmationQuote: { fontSize: 14, fontStyle: 'italic', lineHeight: 20 },
+
+  // Disclaimer
+  disclaimer: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    padding: 12, marginHorizontal: 20, marginTop: 16,
+    borderRadius: 10, gap: 8,
   },
-  ticketHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  disclaimerText: { flex: 1, fontSize: 11, color: '#64748B', lineHeight: 16 },
+
+  // Mood
+  moodCard: {
+    marginHorizontal: 20, marginTop: 20, padding: 18,
+    borderRadius: 20, elevation: 2, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8,
+    borderWidth: 1,
+  },
+  moodHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  moodTitle: { fontSize: 15, fontWeight: '700' },
+  moodCheck: { fontSize: 11, color: '#10B981', fontWeight: '700' },
+  moodRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  moodBtn: {
+    flex: 1, alignItems: 'center', paddingVertical: 10, marginHorizontal: 2,
+    borderRadius: 12,
+  },
+  moodEmoji: { fontSize: 28 },
+  moodLabel: { fontSize: 10, marginTop: 4, fontWeight: '600' },
+
+  // Stats
+  statsCard: {
+    marginHorizontal: 20, marginTop: 16, padding: 18, borderRadius: 20,
+  },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 10 },
+  statBox: { alignItems: 'center' },
+  statValue: { fontSize: 22, fontWeight: '900' },
+  statLabel: { fontSize: 11, marginTop: 2 },
+
+  // Sections
+  section: { marginTop: 24, paddingHorizontal: 20 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { fontSize: 11, fontWeight: '900', color: '#94A3B8', letterSpacing: 1.5, marginBottom: 12 },
+
+  // Tools grid
+  toolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  toolCard: {
+    width: '47%', padding: 16, borderRadius: 18,
+  },
+  toolIconCircle: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 10,
+  },
+  toolTitle: { fontSize: 15, fontWeight: '800' },
+  toolSubtitle: { fontSize: 11, marginTop: 2 },
+
+  // Crisis
+  crisisCard: {
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 20, marginTop: 20, padding: 16,
+    backgroundColor: '#DC2626', borderRadius: 18,
+  },
+  crisisLeft: { marginRight: 14 },
+  crisisRight: { flex: 1 },
+  crisisTitle: { color: '#fff', fontWeight: '900', fontSize: 15 },
+  crisisSubtitle: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 },
+
+  // Tickets
+  ticketsScroll: { gap: 10, paddingRight: 20 },
+  newTicketBtn: {
+    width: 110, height: 130, borderRadius: 18,
+    borderWidth: 2, borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  addCircle: {
+    width: 40, height: 40, borderRadius: 20, 
+    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  },
+  newTicketText: { color: brand.blue, fontWeight: '800', fontSize: 12 },
+  ticketCard: {
+    width: 170, height: 130, padding: 14, borderRadius: 18,
+    borderWidth: 1, elevation: 1, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
+  },
+  ticketHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
-  ticketDate: { fontSize: 11, color: '#AAA', fontWeight: '600' },
-  ticketSubject: { fontWeight: '700', fontSize: 15, color: '#333', lineHeight: 20, flex: 1 },
-  statusBadge: { marginTop: 'auto' },
-  statusText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
-  emptyTicketsBox: { justifyContent: 'center', paddingLeft: 10 },
-  emptyText: { color: '#999', fontStyle: 'italic', fontSize: 13 },
-  toolsGrid: { gap: 12 },
-  footerStats: { 
-      marginTop: 40, marginHorizontal: 20, padding: 25, backgroundColor: '#1A1A1A', 
-      borderRadius: 30, elevation: 10 
+  ticketDate: { fontSize: 10, color: '#94A3B8', fontWeight: '700' },
+  ticketSubject: { fontSize: 13, fontWeight: '700', flex: 1, lineHeight: 18 },
+  ticketStatus: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', marginTop: 8 },
+  emptyTickets: {
+    width: 200, padding: 20, justifyContent: 'center',
   },
-  footerLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '900', textAlign: 'center', marginBottom: 20, letterSpacing: 2 },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-around' },
-  statItem: { alignItems: 'center' },
-  statValue: { color: '#fff', fontSize: 22, fontWeight: '900' },
-  statLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }
+  emptyText: { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
+  emptyHint: { color: '#CBD5E1', fontSize: 11, marginTop: 4 },
+
+  // Learn
+  learnGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  learnCard: {
+    width: '47%', padding: 18, borderRadius: 16,
+    alignItems: 'center',
+  },
+  learnEmoji: { fontSize: 30, marginBottom: 8 },
+  learnTitle: { fontSize: 13, fontWeight: '700' },
+
+  // Footer
+  footerStats: {
+    marginHorizontal: 20, marginTop: 28, padding: 24,
+    backgroundColor: '#0F172A', borderRadius: 24,
+  },
+  footerLabel: {
+    color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '900',
+    textAlign: 'center', marginBottom: 16, letterSpacing: 2,
+  },
+  footerRow: { flexDirection: 'row', justifyContent: 'space-around' },
+  footerStat: { alignItems: 'center' },
+  footerValue: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  footerStatLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 },
 });
 
 export default memo(SupportSheet);

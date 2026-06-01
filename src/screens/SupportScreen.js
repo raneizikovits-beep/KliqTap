@@ -1,11 +1,11 @@
 // client/src/screens/SupportScreen.js
-// ⭐️ FULL DARK MODE COMPATIBLE - ALL ORIGINAL FUNCTIONS PRESERVED ⭐️
+// ⭐️ V5 PREMIUM FOCUS MODE: Powerful Animations, Auras, Pull-to-Refresh, & Glass UI
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   View, Text, ScrollView, TouchableOpacity, StyleSheet, 
   Animated, Easing, TextInput, Alert, Modal, Dimensions, 
-  PanResponder, KeyboardAvoidingView, Platform
+  PanResponder, KeyboardAvoidingView, Platform, RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons'; 
 import { styles as globalStyles } from '../constants/styles';
@@ -16,19 +16,11 @@ import * as Haptics from 'expo-haptics';
 const { width } = Dimensions.get('window');
 
 const safeHaptic = async (style) => {
-    try {
-        if (Haptics) await Haptics.impactAsync(style);
-    } catch (error) {
-        console.warn('Haptics impact failed:', error);
-    }
+    try { if (Haptics) await Haptics.impactAsync(style); } catch (e) {}
 };
 
 const safeHapticNotify = async (type) => {
-    try {
-        if (Haptics) await Haptics.notificationAsync(type);
-    } catch (error) {
-        console.warn('Haptics notification failed:', error);
-    }
+    try { if (Haptics) await Haptics.notificationAsync(type); } catch (e) {}
 };
 
 const MOODS = [
@@ -54,11 +46,21 @@ const AFFIRMATIONS = [
     "You are safe here.",
     "Small steps are still progress.",
     "I trust the process of life.",
-    "I am enough just as I am."
+    "I am enough just as I am.",
+    "Your potential to succeed is infinite.",
+    "Breathe in courage, exhale doubt."
 ];
 
-export default function SupportScreen({ setSecondSheet, setThirdSheet }) {
-  // ⭐️ Pulling dynamic settings for Dark Mode
+const getScreenTitle = (tool) => {
+    switch (tool) {
+        case 'breathe': return 'Breathing Exercise';
+        case 'sounds': return 'Soundscape';
+        case 'affirmation': return 'Daily Affirmation';
+        default: return 'Mental Space';
+    }
+};
+
+export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) {
   const { streak, award, userSettings } = useAppStore(state => ({
     streak: state.streak || 0,
     award: state.award,
@@ -66,53 +68,74 @@ export default function SupportScreen({ setSecondSheet, setThirdSheet }) {
   }));
 
   const isDark = userSettings?.darkMode === true;
+  const focusTool = sheet?.tool; 
   
   const [selectedMood, setSelectedMood] = useState('neutral');
   const [affirmation, setAffirmation] = useState(AFFIRMATIONS[0]);
   const [isBreathing, setIsBreathing] = useState(false);
+  const [breathePhase, setBreathePhase] = useState('Ready');
   const [sound, setSound] = useState(null);
   const [activeSoundId, setActiveSoundId] = useState('off');
   const [worryText, setWorryText] = useState("");
   const [worryModalVisible, setWorryModalVisible] = useState(false);
   const [energyLevel, setEnergyLevel] = useState(50);
+  const [refreshing, setRefreshing] = useState(false);
 
+  // --- Animations ---
   const breathScale = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const pan = useRef(new Animated.ValueXY()).current;
+  const entranceAnim = useRef(new Animated.Value(40)).current; 
+  const entranceOpacity = useRef(new Animated.Value(0)).current;
+  const soundPulseAnim = useRef(new Animated.Value(1)).current;
 
   const handleClose = useCallback(() => {
     if (setThirdSheet) setThirdSheet(null);
     if (setSecondSheet) setSecondSheet(null);
   }, [setThirdSheet, setSecondSheet]);
 
+  const cycleAffirmation = useCallback(() => {
+      let next;
+      do { next = AFFIRMATIONS[Math.floor(Math.random() * AFFIRMATIONS.length)]; }
+      while (next === affirmation && AFFIRMATIONS.length > 1);
+      setAffirmation(next);
+  }, [affirmation]);
+
+  // Pull to refresh
+  const onRefresh = useCallback(() => {
+      setRefreshing(true);
+      safeHaptic(Haptics.ImpactFeedbackStyle.Medium);
+      setTimeout(() => {
+          cycleAffirmation();
+          setRefreshing(false);
+          safeHapticNotify(Haptics.NotificationFeedbackType.Success);
+      }, 1000);
+  }, [cycleAffirmation]);
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-          return Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5;
-      },
-      onPanResponderMove: (evt, gestureState) => {
-          if (gestureState.dy > 0) {
-              pan.setValue({ x: 0, y: gestureState.dy });
-          }
-      },
+      onMoveShouldSetPanResponder: (evt, gestureState) => Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5,
+      onPanResponderMove: (evt, gestureState) => { if (gestureState.dy > 0) pan.setValue({ x: 0, y: gestureState.dy }); },
       onPanResponderRelease: (evt, gestureState) => {
-          if (gestureState.dy > 50) {
-              handleClose();
-          } else {
-              Animated.spring(pan, {
-                  toValue: { x: 0, y: 0 },
-                  useNativeDriver: false 
-              }).start();
-          }
+          if (gestureState.dy > 50) handleClose();
+          else Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: false }).start();
       }
     })
   ).current;
 
+  // Entrance Animation
   useEffect(() => {
+      Animated.parallel([
+          Animated.timing(entranceAnim, { toValue: 0, duration: 600, easing: Easing.out(Easing.exp), useNativeDriver: true }),
+          Animated.timing(entranceOpacity, { toValue: 1, duration: 500, useNativeDriver: true })
+      ]).start();
+      
       setAffirmation(AFFIRMATIONS[Math.floor(Math.random() * AFFIRMATIONS.length)]);
-  }, []);
+      if (focusTool === 'breathe') setTimeout(() => setIsBreathing(true), 600);
+  }, [focusTool]);
 
+  // Breathing Loop with phases
   useEffect(() => {
     let loop;
     let hapticInterval;
@@ -125,68 +148,70 @@ export default function SupportScreen({ setSecondSheet, setThirdSheet }) {
         ])
       );
       loop.start();
-
-      hapticInterval = setInterval(() => {
-         safeHaptic(Haptics.ImpactFeedbackStyle.Light);
-      }, 4000);
+      hapticInterval = setInterval(() => safeHaptic(Haptics.ImpactFeedbackStyle.Light), 4000);
     } else {
-      Animated.timing(breathScale, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true
-      }).start();
+      Animated.timing(breathScale, { toValue: 1, duration: 500, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
     }
-    
-    return () => {
-        if (loop) loop.stop();
-        if (hapticInterval) clearInterval(hapticInterval);
+
+    let prevValue = 1;
+    const id = breathScale.addListener(({ value }) => {
+        if (!isBreathing) { setBreathePhase('Ready'); return; }
+        const isAscending = value > prevValue;
+        prevValue = value;
+        if (isAscending) {
+            if (value > 1.4) setBreathePhase('Hold');
+            else setBreathePhase('Inhale');
+        } else {
+            if (value < 1.1) setBreathePhase('Hold');
+            else setBreathePhase('Exhale');
+        }
+    });
+
+    return () => { 
+        if (loop) loop.stop(); 
+        if (hapticInterval) clearInterval(hapticInterval); 
+        breathScale.removeListener(id);
     };
   }, [isBreathing, breathScale]);
 
+  // Active Sound Pulsing
+  useEffect(() => {
+      let pulseLoop;
+      if (activeSoundId !== 'off') {
+          pulseLoop = Animated.loop(
+              Animated.sequence([
+                  Animated.timing(soundPulseAnim, { toValue: 1.15, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+                  Animated.timing(soundPulseAnim, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
+              ])
+          );
+          pulseLoop.start();
+      } else {
+          soundPulseAnim.setValue(1);
+      }
+      return () => { if (pulseLoop) pulseLoop.stop(); };
+  }, [activeSoundId, soundPulseAnim]);
+
   useEffect(() => {
     return () => {
-        if (sound) {
-            sound.unloadAsync().catch(e => console.warn('Error unloading sound:', e));
-        }
+        if (sound) sound.unloadAsync().catch(e => console.warn('Error unloading sound:', e));
     };
   }, [sound]);
 
   const handlePlaySound = useCallback(async (trackId) => {
-    if (sound) {
-      try { await sound.unloadAsync(); } catch(e) { console.warn('Failed to unload previous sound', e); }
-    }
     setActiveSoundId(trackId);
-    if (trackId === 'off') {
-        setSound(null);
-        return;
-    }
     safeHapticNotify(Haptics.NotificationFeedbackType.Success);
-  }, [sound]);
+  }, []);
 
   const handleShredWorry = useCallback(() => {
       if(!worryText.trim()) return;
-      
-      Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 1500,
-          useNativeDriver: true
-      }).start(() => {
+      Animated.timing(fadeAnim, { toValue: 0, duration: 1000, useNativeDriver: true }).start(() => {
           safeHapticNotify(Haptics.NotificationFeedbackType.Success);
           award("Released Worry");
           setWorryModalVisible(false);
           setWorryText("");
           fadeAnim.setValue(1); 
-          Alert.alert("Gone", "Your worry has been released.");
       });
   }, [worryText, fadeAnim, award]);
-
-  const handleTaskPress = useCallback((action) => {
-      if (setThirdSheet) {
-        setThirdSheet({ source: action });
-      } else if (setSecondSheet) {
-        setSecondSheet({ source: action });
-      }
-  }, [setThirdSheet, setSecondSheet]);
 
   const toggleBreathing = useCallback(() => {
       setIsBreathing(prev => !prev);
@@ -196,218 +221,201 @@ export default function SupportScreen({ setSecondSheet, setThirdSheet }) {
   return (
     <Animated.View style={[localStyles.mainContainer, { backgroundColor: isDark ? '#000' : '#F9FAFB', transform: [{ translateY: pan.y }] }]}>
         
+        {/* HEADER */}
         <View style={localStyles.headerTop}>
             <View {...panResponder.panHandlers} style={localStyles.headerTitleRow}>
-                <Ionicons name="heart-circle" size={28} color="#FF2D55" />
-                <Text style={[localStyles.title, { color: isDark ? '#fff' : '#111' }]}>Mental Space</Text>
+                <Ionicons name={focusTool ? "leaf" : "heart-circle"} size={28} color={focusTool ? "#10B981" : "#FF2D55"} />
+                <Text style={[localStyles.title, { color: isDark ? '#fff' : '#111' }]}>{getScreenTitle(focusTool)}</Text>
             </View>
             <View style={localStyles.headerRightActions}>
-                <View style={[localStyles.streakPill, { backgroundColor: isDark ? '#1C1C1E' : '#E3F2FD' }]}>
-                    <Text style={[localStyles.streakText, { color: isDark ? '#fff' : Data.brand.blue }]}>🔥 {streak}</Text>
-                </View>
-                <TouchableOpacity 
-                    onPress={handleClose} 
-                    style={[localStyles.closeBtn, { backgroundColor: isDark ? '#333' : '#eee' }]}
-                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                    <Ionicons name="close" size={24} color={isDark ? '#ccc' : "#666"} />
+                {!focusTool && (
+                    <View style={[localStyles.streakPill, { backgroundColor: isDark ? '#1C1C1E' : '#E3F2FD' }]}>
+                        <Text style={[localStyles.streakText, { color: isDark ? '#fff' : Data.brand.blue }]}>🔥 {streak}</Text>
+                    </View>
+                )}
+                <TouchableOpacity onPress={handleClose} style={[localStyles.closeBtn, { backgroundColor: isDark ? '#2C2C2E' : '#E2E8F0' }]}>
+                    <Ionicons name="close" size={24} color={isDark ? '#ccc' : "#475569"} />
                 </TouchableOpacity>
             </View>
         </View>
 
-        <ScrollView contentContainerStyle={localStyles.scrollContent} showsVerticalScrollIndicator={false}>
-            {/* DAILY AFFIRMATION */}
-            <View style={[localStyles.affirmationCard, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderLeftColor: Data.brand.blue }]}>
-                <Text style={[localStyles.affirmationText, { color: isDark ? '#ddd' : '#555' }]}>"{affirmation}"</Text>
-            </View>
+        <Animated.ScrollView 
+            contentContainerStyle={localStyles.scrollContent} 
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? '#fff' : Data.brand.blue} />}
+            style={{ opacity: entranceOpacity, transform: [{ translateY: entranceAnim }] }}
+        >
+            
+            {/* AFFIRMATION FOCUS OR GENERAL */}
+            {(!focusTool || focusTool === 'affirmation') && (
+                focusTool === 'affirmation' ? (
+                    <View style={[localStyles.section, { marginTop: 40, alignItems: 'center' }]}>
+                        <View style={[localStyles.focusToolCard, { backgroundColor: isDark ? '#111' : '#fff', borderColor: isDark ? '#333' : '#E2E8F0', borderWidth: 1, shadowColor: isDark ? '#000' : '#CBD5E1', shadowOpacity: 0.3, shadowRadius: 20 }]}>
+                            <Ionicons name="sparkles" size={50} color={Data.brand.blue} style={{ marginBottom: 20 }} />
+                            <Text style={[localStyles.affirmationText, { color: isDark ? '#E2E8F0' : '#1E293B', fontSize: 24, lineHeight: 36 }]}>"{affirmation}"</Text>
+                            <TouchableOpacity style={[globalStyles.primaryBtn, { marginTop: 50, backgroundColor: Data.brand.blue, width: '90%', height: 55, borderRadius: 28, elevation: 5, shadowColor: Data.brand.blue, shadowOpacity: 0.4, shadowRadius: 10 }]} onPress={() => { cycleAffirmation(); safeHaptic(Haptics.ImpactFeedbackStyle.Light); }}>
+                                <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 1 }}>NEXT AFFIRMATION ✨</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                ) : (
+                    <View style={[localStyles.affirmationCard, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderLeftColor: Data.brand.blue, marginTop: 20 }]}>
+                        <Text style={[localStyles.affirmationText, { color: isDark ? '#ddd' : '#555' }]}>"{affirmation}"</Text>
+                    </View>
+                )
+            )}
 
             {/* MOOD CHECK-IN */}
-            <View style={localStyles.section}>
-                <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#000' }]}>How are you feeling?</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={localStyles.moodScroll}>
-                    {MOODS.map((m) => {
-                        const isSelected = selectedMood === m.id;
-                        return (
-                            <TouchableOpacity 
-                                key={m.id} 
-                                style={[
-                                    localStyles.moodBtn, 
-                                    { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#333' : '#eee' },
-                                    isSelected && { backgroundColor: m.color, borderColor: m.color }
-                                ]}
-                                onPress={() => {
-                                    setSelectedMood(m.id);
-                                    safeHaptic(Haptics.ImpactFeedbackStyle.Light);
-                                }}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={{ fontSize: 28 }}>{m.icon}</Text>
-                                <Text style={[localStyles.moodLabel, { color: isDark ? '#aaa' : '#555' }, isSelected && { color: '#fff', fontWeight: 'bold' }]}>
-                                    {m.label}
-                                </Text>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </ScrollView>
-            </View>
+            {!focusTool && (
+                <View style={localStyles.section}>
+                    <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#0F172A' }]}>How are you feeling?</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={localStyles.moodScroll}>
+                        {MOODS.map((m) => {
+                            const isSelected = selectedMood === m.id;
+                            return (
+                                <TouchableOpacity 
+                                    key={m.id} 
+                                    style={[
+                                        localStyles.moodBtn, 
+                                        { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#333' : '#F1F5F9' }, 
+                                        isSelected && { backgroundColor: m.color, borderColor: m.color, transform: [{ scale: 1.05 }] }
+                                    ]} 
+                                    onPress={() => { setSelectedMood(m.id); safeHaptic(Haptics.ImpactFeedbackStyle.Medium); }}
+                                >
+                                    <Text style={{ fontSize: 28 }}>{m.icon}</Text>
+                                    <Text style={[localStyles.moodLabel, { color: isDark ? '#94A3B8' : '#64748B' }, isSelected && { color: '#fff', fontWeight: '900' }]}>{m.label}</Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </ScrollView>
+                </View>
+            )}
 
             {/* ENERGY LEVEL */}
-            <View style={localStyles.section}>
-                 <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#000' }]}>Energy Level</Text>
-                 <View style={[localStyles.energyContainer, { backgroundColor: isDark ? '#333' : '#eee' }]}>
-                     <View style={[
-                         localStyles.energyFill, 
-                         { width: `${energyLevel}%`, backgroundColor: energyLevel > 30 ? Data.brand.green : Data.brand.red }
-                     ]} />
-                     <View style={localStyles.energyOverlay}>
-                         {[20, 50, 80, 100].map(level => (
-                             <TouchableOpacity 
-                                key={`energy-${level}`} 
-                                onPress={() => {
-                                    setEnergyLevel(level);
-                                    safeHaptic(Haptics.ImpactFeedbackStyle.Light);
-                                }} 
-                                style={{flex: 1}} 
-                             />
-                         ))}
+            {!focusTool && (
+                <View style={localStyles.section}>
+                     <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#0F172A' }]}>Energy Level 🔋</Text>
+                     <View style={[localStyles.energyContainer, { backgroundColor: isDark ? '#2C2C2E' : '#E2E8F0' }]}>
+                         <Animated.View style={[localStyles.energyFill, { width: `${energyLevel}%`, backgroundColor: energyLevel > 30 ? Data.brand.green : Data.brand.red }]} />
+                         <View style={localStyles.energyOverlay}>
+                             {[20, 50, 80, 100].map(level => (
+                                 <TouchableOpacity key={`energy-${level}`} onPress={() => { setEnergyLevel(level); safeHaptic(Haptics.ImpactFeedbackStyle.Light); }} style={{flex: 1}} />
+                             ))}
+                         </View>
                      </View>
-                 </View>
-                 <Text style={[localStyles.energyText, { color: isDark ? '#888' : '#888' }]}>{energyLevel}% Charged</Text>
-            </View>
+                     <Text style={[localStyles.energyText, { color: isDark ? '#64748B' : '#94A3B8' }]}>{energyLevel}% Charged</Text>
+                </View>
+            )}
 
             {/* INTERACTIVE TOOLS */}
-            <View style={localStyles.section}>
-                <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#000' }]}>Interactive Tools</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
+            {(!focusTool || focusTool === 'breathe' || focusTool === 'sounds') && (
+                <View style={[localStyles.section, focusTool && { marginTop: 40, alignItems: 'center' }]}>
+                    {!focusTool && <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#0F172A' }]}>Interactive Tools</Text>}
                     
-                    <View style={[localStyles.toolCard, { backgroundColor: isDark ? '#00332E' : '#E0F7FA' }]}>
-                        <View style={localStyles.circleContainer}>
-                            <Animated.View style={[localStyles.breathCircle, { transform: [{ scale: breathScale }] }]} />
-                        </View>
-                        <View style={localStyles.toolTextContainer}>
-                            <Text style={[localStyles.toolTitle, { color: isDark ? '#4DB6AC' : '#00695C' }]}>Breathe</Text>
-                            <Text style={[localStyles.toolDesc, { color: isDark ? '#B2DFDB' : '#004D40' }]}>Calm your mind</Text>
-                            <TouchableOpacity style={localStyles.miniBtn} onPress={toggleBreathing}>
-                                <Text style={localStyles.miniBtnText}>{isBreathing ? "STOP" : "START"}</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-
-                    <View style={[localStyles.toolCard, { backgroundColor: isDark ? '#424213' : '#F0F4C3' }]}>
-                        <View style={localStyles.circleContainer}>
-                            <Text style={{fontSize: 32}}>🎧</Text>
-                        </View>
-                        <View style={localStyles.toolTextContainer}>
-                            <Text style={[localStyles.toolTitle, { color: isDark ? '#DCE775' : '#827717' }]}>Soundscape</Text>
-                            <View style={localStyles.soundRow}>
-                                {SOUND_TRACKS.slice(0, 3).map(t => {
-                                    const isActive = activeSoundId === t.id;
-                                    return (
-                                        <TouchableOpacity 
-                                            key={t.id} 
-                                            onPress={() => handlePlaySound(t.id)}
-                                            style={[localStyles.soundBtn, isActive && { backgroundColor: isDark ? '#666' : '#fff', borderWidth: 1, borderColor: '#ccc' }]}
-                                        >
-                                            <Text style={{fontSize: 14}}>{t.icon}</Text>
-                                        </TouchableOpacity>
-                                    );
-                                })}
+                    <ScrollView horizontal={!focusTool} showsHorizontalScrollIndicator={false} contentContainerStyle={focusTool ? { width: '100%', alignItems: 'center' } : { paddingRight: 20 }}>
+                        
+                        {/* BREATHE CARD */}
+                        {(!focusTool || focusTool === 'breathe') && (
+                            <View style={[localStyles.toolCard, { backgroundColor: isDark ? '#001A17' : '#E0F2F1', borderWidth: isDark ? 1 : 0, borderColor: '#004D40' }, focusTool && localStyles.focusToolCard]}>
+                                <View style={[localStyles.circleContainer, focusTool && { width: 220, height: 220, marginBottom: 40 }]}>
+                                    {/* ⭐️ LOTUS AURAS ⭐️ */}
+                                    <Animated.View style={[localStyles.breathAura, focusTool && localStyles.focusBreathAura, { transform: [{ scale: Animated.multiply(breathScale, 1.4) }], opacity: 0.15 }]} />
+                                    <Animated.View style={[localStyles.breathAura, focusTool && localStyles.focusBreathAura, { transform: [{ scale: Animated.multiply(breathScale, 1.2) }], opacity: 0.3 }]} />
+                                    
+                                    <Animated.View style={[localStyles.breathCircle, focusTool && localStyles.focusBreathCircle, { transform: [{ scale: breathScale }] }]}>
+                                         {focusTool && <Text style={localStyles.breathePhaseText}>{breathePhase}</Text>}
+                                    </Animated.View>
+                                </View>
+                                <View style={[localStyles.toolTextContainer, focusTool && { alignItems: 'center', marginLeft: 0 }]}>
+                                    <Text style={[localStyles.toolTitle, { color: isDark ? '#4DB6AC' : '#00695C' }, focusTool && { fontSize: 28, letterSpacing: 1 }]}>Breathe</Text>
+                                    {focusTool && <Text style={{ color: isDark ? '#B2DFDB' : '#004D40', marginTop: 10, fontSize: 15, opacity: 0.8 }}>Sync your breath with the rings</Text>}
+                                    <TouchableOpacity style={[localStyles.miniBtn, focusTool && { paddingHorizontal: 40, paddingVertical: 16, borderRadius: 30, marginTop: 30, backgroundColor: '#004D40', elevation: 5, shadowColor: '#004D40', shadowOpacity: 0.5, shadowRadius: 10 }]} onPress={toggleBreathing}>
+                                        <Text style={[localStyles.miniBtnText, focusTool && { fontSize: 16, letterSpacing: 1.5 }]}>{isBreathing ? "PAUSE" : "BEGIN"}</Text>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
-                        </View>
-                    </View>
-                </ScrollView>
-            </View>
+                        )}
+
+                        {/* SOUNDS CARD */}
+                        {(!focusTool || focusTool === 'sounds') && (
+                            <View style={[localStyles.toolCard, { backgroundColor: isDark ? '#333300' : '#F9FBE7', borderWidth: isDark ? 1 : 0, borderColor: '#827717' }, focusTool && localStyles.focusToolCard]}>
+                                <View style={[localStyles.circleContainer, focusTool && { width: 120, height: 120, marginBottom: 20 }]}>
+                                    <Text style={{fontSize: focusTool ? 70 : 32}}>🎧</Text>
+                                </View>
+                                <View style={[localStyles.toolTextContainer, focusTool && { alignItems: 'center', marginLeft: 0, width: '100%' }]}>
+                                    <Text style={[localStyles.toolTitle, { color: isDark ? '#DCE775' : '#827717' }, focusTool && { fontSize: 28, marginBottom: 25, letterSpacing: 1 }]}>Soundscape</Text>
+                                    <View style={[localStyles.soundRow, focusTool && { gap: 20, flexWrap: 'wrap', justifyContent: 'center', width: '100%', paddingHorizontal: 10 }]}>
+                                        {SOUND_TRACKS.map(t => {
+                                            if (!focusTool && t.id === 'fire') return null;
+                                            const isActive = activeSoundId === t.id;
+                                            return (
+                                                <TouchableOpacity key={t.id} onPress={() => handlePlaySound(t.id)} activeOpacity={0.8}>
+                                                    <Animated.View style={[
+                                                        localStyles.soundBtn, 
+                                                        focusTool && { width: 70, height: 70, borderRadius: 35 }, 
+                                                        isActive && { backgroundColor: isDark ? '#827717' : '#fff', borderWidth: 2, borderColor: '#827717', shadowColor: '#827717', shadowOpacity: 0.4, shadowRadius: 8, elevation: 5 },
+                                                        isActive && focusTool && { transform: [{ scale: soundPulseAnim }] }
+                                                    ]}>
+                                                        <Text style={{fontSize: focusTool ? 32 : 14}}>{t.icon}</Text>
+                                                    </Animated.View>
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </View>
+                                </View>
+                            </View>
+                        )}
+                    </ScrollView>
+                </View>
+            )}
 
             {/* WORRY BOX */}
-            <View style={[localStyles.section, { marginTop: 25 }]}>
-                <TouchableOpacity 
-                    style={[localStyles.promoCard, { backgroundColor: isDark ? '#311B3D' : Data.brand.purple, shadowColor: isDark ? '#000' : Data.brand.purple }]} 
-                    activeOpacity={0.9} 
-                    onPress={() => setWorryModalVisible(true)}
-                >
-                    <View style={localStyles.promoTextContainer}>
-                        <Text style={[globalStyles.h2, {color: '#fff'}]}>Worry Box</Text>
-                        <Text style={localStyles.promoSubText}>Type out your stress and destroy it instantly.</Text>
-                        <View style={[localStyles.promoBtn, { backgroundColor: isDark ? '#4A148C' : '#fff' }]}>
-                             <Text style={[localStyles.promoBtnText, { color: isDark ? '#fff' : Data.brand.purple }]}>OPEN BOX</Text>
+            {!focusTool && (
+                <View style={[localStyles.section, { marginTop: 30 }]}>
+                    <TouchableOpacity 
+                        style={[localStyles.promoCard, { backgroundColor: isDark ? '#311B3D' : Data.brand.purple, shadowColor: Data.brand.purple, shadowOpacity: 0.3, shadowRadius: 15 }]} 
+                        activeOpacity={0.9} 
+                        onPress={() => setWorryModalVisible(true)}
+                    >
+                        <View style={localStyles.promoTextContainer}>
+                            <Text style={[globalStyles.h2, {color: '#fff', fontSize: 20, fontWeight: '900'}]}>Worry Box</Text>
+                            <Text style={localStyles.promoSubText}>Type out your stress and destroy it instantly.</Text>
+                            <View style={[localStyles.promoBtn, { backgroundColor: isDark ? '#4A148C' : '#fff' }]}>
+                                 <Text style={[localStyles.promoBtnText, { color: isDark ? '#fff' : Data.brand.purple }]}>OPEN BOX</Text>
+                            </View>
                         </View>
-                    </View>
-                    <View style={localStyles.promoIconContainer}>
-                         <Text style={{fontSize: 45}}>🗑️</Text>
-                    </View>
-                </TouchableOpacity>
-            </View>
-
-            {/* RESOURCES */}
-            <View style={localStyles.section}>
-                <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#000' }]}>Resources</Text>
-                
-                <TouchableOpacity style={[localStyles.resourceRow, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#333' : '#f5f5f5' }]} onPress={() => handleTaskPress('SupportPro')}>
-                    <View style={[localStyles.iconBox, {backgroundColor: isDark ? '#102A43' : '#E3F2FD'}]}>
-                        <Ionicons name="medical" size={24} color="#1E88E5" />
-                    </View>
-                    <View style={{flex: 1}}>
-                        <Text style={[localStyles.cardTitle, { color: isDark ? '#fff' : '#333' }]}>Professional Help</Text>
-                        <Text style={[localStyles.cardSub, { color: isDark ? '#888' : '#888' }]}>Find a therapist</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color={isDark ? '#666' : "#ccc"} />
-                </TouchableOpacity>
-
-                <TouchableOpacity style={[localStyles.resourceRow, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#333' : '#f5f5f5' }]} onPress={() => handleTaskPress('SupportPeers')}>
-                    <View style={[localStyles.iconBox, {backgroundColor: isDark ? '#311B3D' : '#F3E5F5'}]}>
-                        <Ionicons name="people" size={24} color="#8E24AA" />
-                    </View>
-                    <View style={{flex: 1}}>
-                        <Text style={[localStyles.cardTitle, { color: isDark ? '#fff' : '#333' }]}>Community Circle</Text>
-                        <Text style={[localStyles.cardSub, { color: isDark ? '#888' : '#888' }]}>Peer support groups</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color={isDark ? '#666' : "#ccc"} />
-                </TouchableOpacity>
-
-                <TouchableOpacity style={[localStyles.resourceRow, { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#333' : '#f5f5f5' }]} onPress={() => handleTaskPress('SupportCrisis')}>
-                    <View style={[localStyles.iconBox, {backgroundColor: isDark ? '#4A1815' : '#FFEBEE'}]}>
-                        <Ionicons name="alert" size={24} color="#E53935" />
-                    </View>
-                    <View style={{flex: 1}}>
-                        <Text style={[localStyles.cardTitle, { color: isDark ? '#fff' : '#333' }]}>Crisis Hotline</Text>
-                        <Text style={[localStyles.cardSub, { color: isDark ? '#888' : '#888' }]}>Immediate assistance</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color={isDark ? '#666' : "#ccc"} />
-                </TouchableOpacity>
-            </View>
-        </ScrollView>
+                        <View style={localStyles.promoIconContainer}>
+                             <Text style={{fontSize: 50}}>🗑️</Text>
+                        </View>
+                    </TouchableOpacity>
+                </View>
+            )}
+        </Animated.ScrollView>
 
         {/* WORRY MODAL */}
         <Modal visible={worryModalVisible} animationType="fade" transparent={true} onRequestClose={() => setWorryModalVisible(false)}>
-            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={localStyles.modalOverlay}>
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={localStyles.modalOverlay}>
                 <View style={[localStyles.modalContent, { backgroundColor: isDark ? '#1C1C1E' : '#fff' }]}>
                     <View style={localStyles.modalHeader}>
-                        <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#000' }]}>Release It</Text>
+                        <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#0F172A', fontSize: 22 }]}>Release It</Text>
                         <TouchableOpacity onPress={() => setWorryModalVisible(false)} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-                            <Ionicons name="close" size={24} color={isDark ? '#aaa' : "#999"} />
+                            <Ionicons name="close" size={26} color={isDark ? '#aaa' : "#64748B"} />
                         </TouchableOpacity>
                     </View>
-                    
-                    <Text style={[globalStyles.p, { color: isDark ? '#ccc' : '#333' }]}>What is weighing on you right now?</Text>
-                    
+                    <Text style={[globalStyles.p, { color: isDark ? '#94A3B8' : '#64748B', fontSize: 15 }]}>What is weighing on you right now?</Text>
                     <Animated.View style={{ opacity: fadeAnim, width: '100%' }}>
                         <TextInput 
-                            style={[localStyles.worryInput, { backgroundColor: isDark ? '#333' : '#F5F5F5', color: isDark ? '#fff' : '#000' }]}
-                            multiline
-                            placeholder="I feel..."
-                            placeholderTextColor={isDark ? "#888" : "#ccc"}
-                            value={worryText}
-                            onChangeText={setWorryText}
-                            autoFocus
+                            style={[localStyles.worryInput, { backgroundColor: isDark ? '#111' : '#F1F5F9', color: isDark ? '#fff' : '#0F172A', borderColor: isDark ? '#333' : '#E2E8F0', borderWidth: 1 }]} 
+                            multiline 
+                            placeholder="I feel..." 
+                            placeholderTextColor={isDark ? "#666" : "#94A3B8"}
+                            value={worryText} 
+                            onChangeText={setWorryText} 
+                            autoFocus 
                         />
                     </Animated.View>
-
-                    <TouchableOpacity 
-                        style={[globalStyles.primaryBtn, {backgroundColor: Data.brand.red, marginTop: 20, width: '100%'}]}
-                        onPress={handleShredWorry}
-                        disabled={!worryText.trim()}
-                    >
-                        <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>SHRED THOUGHT 💥</Text>
+                    <TouchableOpacity style={[globalStyles.primaryBtn, {backgroundColor: Data.brand.red, marginTop: 24, width: '100%', height: 55, borderRadius: 16}]} onPress={handleShredWorry} disabled={!worryText.trim()}>
+                        <Text style={{color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 1}}>SHRED THOUGHT 💥</Text>
                     </TouchableOpacity>
                 </View>
             </KeyboardAvoidingView>
@@ -417,57 +425,57 @@ export default function SupportScreen({ setSecondSheet, setThirdSheet }) {
 }
 
 const localStyles = StyleSheet.create({
-  mainContainer: { 
-      flex: 1, 
-      borderTopLeftRadius: 30, 
-      borderTopRightRadius: 30,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: -5 },
-      shadowOpacity: 0.1,
-      shadowRadius: 10,
-      elevation: 10
-  },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 15 },
-  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title: { fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
-  headerRightActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  closeBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  streakPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
-  streakText: { fontSize: 12, fontWeight: 'bold' },
-
-  scrollContent: { paddingBottom: 120 },
-  affirmationCard: { margin: 20, padding: 20, borderRadius: 16, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 10, elevation: 2, borderLeftWidth: 4 },
-  affirmationText: { fontSize: 18, fontStyle: 'italic', textAlign: 'center', lineHeight: 26 },
-  section: { marginTop: 24, paddingHorizontal: 20 },
-  moodScroll: { paddingVertical: 10, gap: 12 },
-  moodBtn: { paddingVertical: 15, paddingHorizontal: 15, minWidth: 70, borderRadius: 16, borderWidth: 1, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5, elevation: 2 },
-  moodLabel: { fontSize: 12, marginTop: 8, fontWeight: '500' },
-  energyContainer: { height: 12, borderRadius: 6, marginTop: 10, overflow: 'hidden', position: 'relative' },
-  energyFill: { height: '100%', borderRadius: 6 },
+  mainContainer: { flex: 1, borderTopLeftRadius: 30, borderTopRightRadius: 30, elevation: 15, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 15 },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  title: { fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
+  closeBtn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  streakPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  streakText: { fontSize: 13, fontWeight: '900' },
+  scrollContent: { paddingBottom: 140 },
+  
+  affirmationCard: { marginHorizontal: 20, padding: 22, borderRadius: 20, alignItems: 'center', borderLeftWidth: 5, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
+  affirmationText: { fontSize: 18, fontStyle: 'italic', textAlign: 'center', lineHeight: 28, fontWeight: '500' },
+  
+  section: { marginTop: 28, paddingHorizontal: 20 },
+  
+  moodScroll: { paddingVertical: 10, gap: 14 },
+  moodBtn: { paddingVertical: 16, paddingHorizontal: 16, minWidth: 75, borderRadius: 20, borderWidth: 1, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
+  moodLabel: { fontSize: 13, marginTop: 10, fontWeight: '700' },
+  
+  energyContainer: { height: 14, borderRadius: 7, marginTop: 12, overflow: 'hidden' },
+  energyFill: { height: '100%', borderRadius: 7 },
   energyOverlay: { position: 'absolute', width: '100%', height: '100%', flexDirection: 'row' },
-  energyText: { textAlign: 'right', marginTop: 5, fontSize: 12 },
-  toolCard: { width: width * 0.6, padding: 16, borderRadius: 20, flexDirection: 'row', alignItems: 'center', marginRight: 12 },
-  circleContainer: { width: 50, height: 50, justifyContent: 'center', alignItems: 'center' },
-  breathCircle: { width: 30, height: 30, borderRadius: 15, opacity: 0.7 },
-  toolTextContainer: { marginLeft: 12, flex: 1 },
-  toolTitle: { fontWeight: 'bold', fontSize: 16 },
-  toolDesc: { fontSize: 12, marginBottom: 5 },
-  miniBtn: { backgroundColor: '#00695C', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, alignSelf: 'flex-start' },
-  miniBtnText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
-  soundRow: { flexDirection: 'row', gap: 6, marginTop: 4 },
-  soundBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.5)', justifyContent: 'center', alignItems: 'center' },
-  promoCard: { borderRadius: 20, padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 5 },
-  promoTextContainer: { flex: 1, paddingRight: 10 },
-  promoSubText: { color: 'rgba(255,255,255,0.95)', fontSize: 14, lineHeight: 20, marginTop: 4 },
-  promoBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, alignSelf: 'flex-start', marginTop: 10 },
-  promoBtnText: { fontWeight: 'bold', fontSize: 12 },
-  promoIconContainer: { width: 60, alignItems: 'center', justifyContent: 'center' },
-  resourceRow: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, marginTop: 10, borderWidth: 1 },
-  iconBox: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  cardTitle: { fontWeight: 'bold', fontSize: 16 },
-  cardSub: { fontSize: 13 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { width: '85%', borderRadius: 24, padding: 24 },
+  energyText: { textAlign: 'right', marginTop: 8, fontSize: 13, fontWeight: '600' },
+  
+  toolCard: { width: width * 0.65, padding: 20, borderRadius: 24, flexDirection: 'row', alignItems: 'center', marginRight: 15, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, elevation: 3 },
+  focusToolCard: { width: width * 0.88, minHeight: 380, paddingVertical: 50, paddingHorizontal: 20, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', borderRadius: 36 },
+  
+  circleContainer: { width: 60, height: 60, justifyContent: 'center', alignItems: 'center' },
+  breathCircle: { width: 36, height: 36, borderRadius: 18, opacity: 0.85, backgroundColor: '#00695C', justifyContent: 'center', alignItems: 'center' },
+  focusBreathCircle: { width: 140, height: 140, borderRadius: 70, shadowColor: '#004D40', shadowOpacity: 0.5, shadowRadius: 20, elevation: 10 },
+  breathAura: { position: 'absolute', width: 36, height: 36, borderRadius: 18, backgroundColor: '#4DB6AC' },
+  focusBreathAura: { width: 140, height: 140, borderRadius: 70 },
+  breathePhaseText: { color: '#fff', fontSize: 18, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 2 },
+  
+  toolTextContainer: { marginLeft: 16, flex: 1 },
+  toolTitle: { fontWeight: '900', fontSize: 18 },
+  toolDesc: { fontSize: 13, marginBottom: 8, marginTop: 2, fontWeight: '500' },
+  miniBtn: { backgroundColor: '#00695C', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 12, alignSelf: 'flex-start' },
+  miniBtnText: { color: '#fff', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  
+  soundRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  soundBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.6)', justifyContent: 'center', alignItems: 'center' },
+  
+  promoCard: { borderRadius: 24, padding: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 8 },
+  promoTextContainer: { flex: 1, paddingRight: 15 },
+  promoSubText: { color: 'rgba(255,255,255,0.85)', fontSize: 15, lineHeight: 22, marginTop: 6, fontWeight: '500' },
+  promoBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, alignSelf: 'flex-start', marginTop: 14 },
+  promoBtnText: { fontWeight: '900', fontSize: 13, letterSpacing: 0.5 },
+  promoIconContainer: { width: 70, alignItems: 'flex-end', justifyContent: 'center' },
+  
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { width: '90%', borderRadius: 28, padding: 28, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20, elevation: 15 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  worryInput: { width: '100%', height: 120, borderRadius: 12, padding: 15, marginTop: 15, textAlignVertical: 'top', fontSize: 16 },
+  worryInput: { width: '100%', height: 130, borderRadius: 16, padding: 18, marginTop: 18, textAlignVertical: 'top', fontSize: 17 },
 });

@@ -130,9 +130,11 @@ export const useAiStore = create((set, get) => ({
    * Body: { userAgentId: string, message: string }
    * מחזיר: { reply: string }
    */
-  sendMessage: async (token, userAgentId, message) => {
+    sendMessage: async (token, userAgentId, message) => {
     if (!token || !userAgentId || !message?.trim()) return;
 
+    console.log('🆔 SENDING userAgentId:', userAgentId);   // ← הוסף את זה
+    
     const trimmedMessage = message.trim();
     const userMsg = {
       id: `user-${Date.now()}`,

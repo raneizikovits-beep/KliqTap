@@ -130,14 +130,15 @@ const EditProfileView = ({ onClose }) => {
             // [FIX-1] Recombine bio + anthem cleanly, no duplication possible.
             const finalIntent = buildBioWithAnthem(bio, myAnthem);
 
-            // [FIX-2] location and website are no longer silently dropped.
+            // Build the update payload with ONLY fields that exist as DB columns.
             const updates = {
                 name: name.trim(),
                 username: username.trim(),
                 intent: finalIntent,
                 avatarUrl: finalAvatarUrl,
-                location: location.trim(),
-                website: website.trim(),
+                // NOTE: location & website removed — these columns do not exist in the
+                // User table, and sending them made Prisma reject the ENTIRE update
+                // (including avatarUrl), which is why the profile picture never saved.
             };
 
             await updateUserProfile(updates);

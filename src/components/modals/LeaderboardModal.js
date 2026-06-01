@@ -13,6 +13,15 @@ import { brand, imageFor } from '../../constants/data'; // ⭐️ הבאנו א�
 
 const { width } = Dimensions.get('window');
 
+// Stable empty array so the memoized `sortedData` keeps referential equality
+// when the store has no leaderboard yet (avoids a needless recompute each render).
+const EMPTY_LEADERBOARD = [];
+
+// Minimum time the refresh spinner stays visible, only to avoid an ugly flicker
+// on very fast refreshes. (V1 hardcoded a 3500ms delay that made every manual
+// refresh feel artificially slow — that has been removed.)
+const MIN_SPINNER_MS = 500;
+
 // PURE FUNCTION: Kept outside to prevent memory reallocation on re-renders (Updated for Dark Mode)
 const getRankTheme = (index, isDark) => {
   if (index === 0) return { color: '#FFD700', bg: isDark ? '#332b00' : '#FFF9E6', icon: 'crown', border: isDark ? '#665600' : '#FFD700', glow: 'rgba(255, 215, 0, 0.2)' }; 
@@ -23,7 +32,7 @@ const getRankTheme = (index, isDark) => {
 
 export const LeaderboardModal = ({ setSecondSheet }) => {
   const user = useAppStore(state => state.user);
-  const leaderboard = useAppStore(state => state.leaderboard) || [];
+  const leaderboard = useAppStore(state => state.leaderboard) ?? EMPTY_LEADERBOARD;
   const isLeaderboardLoading = useAppStore(state => state.isLeaderboardLoading);
   const refreshLeaderboard = useAppStore(state => state.refreshLeaderboard);
   const userSettings = useAppStore(state => state.userSettings); 
@@ -43,23 +52,35 @@ export const LeaderboardModal = ({ setSecondSheet }) => {
     };
   }, []);
 
+  // Ref-based guard instead of depending on `isRefreshing`, so the callback
+  // keeps a stable identity across refreshes (no churn into the mount effect).
+  const isRefreshingRef = useRef(false);
+
   const handleRefreshCore = useCallback(async () => {
-    if (isRefreshing) return;
-    
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
+
     setIsRefreshing(true);
+    const startedAt = Date.now();
     try {
       if (refreshLeaderboard) {
         await refreshLeaderboard();
       }
-      await new Promise(resolve => setTimeout(resolve, 3500));
+      // Keep the spinner up for a brief, fixed floor only — never an arbitrary
+      // multi-second wait.
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < MIN_SPINNER_MS) {
+        await new Promise(resolve => setTimeout(resolve, MIN_SPINNER_MS - elapsed));
+      }
     } catch (error) {
       console.error("Leaderboard refresh failed:", error);
     } finally {
+      isRefreshingRef.current = false;
       if (isMounted.current) {
         setIsRefreshing(false);
       }
     }
-  }, [refreshLeaderboard, isRefreshing]);
+  }, [refreshLeaderboard]);
 
   useEffect(() => {
     if (!hasFetchedOnMount.current) {

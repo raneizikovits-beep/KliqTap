@@ -1,0 +1,66 @@
+{
+  "version": "week_1_launch",
+  "note_for_ran": "החלף כל file_url ב-URL אמיתי בשרת שלך, בדיוק כמו filters.json. הורד טראקים חוקיים מ-Uppbeat/Pixabay (ודא רישיון שמתיר sub-licensing ל-UGC), העלה ל-uploads/sounds/, וקבע artist+license. שירי TayTop = owner:true, אפס סיכון.",
+  "sounds": [
+    {
+      "id": "taytop_gwapo",
+      "title": "Gwapo",
+      "artist": "TayTop",
+      "category": "taytop",
+      "duration_sec": 30,
+      "is_owned": true,
+      "license": "TayTop Original — owned",
+      "cover_emoji": "😎",
+      "file_name": "gwapo.mp3",
+      "file_url": "https://api.kliqtap.com/uploads/sounds/taytop/gwapo.mp3"
+    },
+    {
+      "id": "taytop_laban_lang",
+      "title": "Laban Lang",
+      "artist": "TayTop",
+      "category": "taytop",
+      "duration_sec": 30,
+      "is_owned": true,
+      "license": "TayTop Original — owned",
+      "cover_emoji": "🔥",
+      "file_name": "laban_lang.mp3",
+      "file_url": "https://api.kliqtap.com/uploads/sounds/taytop/laban_lang.mp3"
+    },
+    {
+      "id": "free_upbeat_pop",
+      "title": "Sunny Pop",
+      "artist": "Uppbeat (royalty-free)",
+      "category": "upbeat",
+      "duration_sec": 30,
+      "is_owned": false,
+      "license": "Uppbeat — verify UGC/sub-license terms",
+      "cover_emoji": "🎉",
+      "file_name": "sunny_pop.mp3",
+      "file_url": "https://api.kliqtap.com/uploads/sounds/upbeat/sunny_pop.mp3"
+    },
+    {
+      "id": "free_chill_lofi",
+      "title": "Lofi Nights",
+      "artist": "Uppbeat (royalty-free)",
+      "category": "chill",
+      "duration_sec": 30,
+      "is_owned": false,
+      "license": "Uppbeat — verify UGC/sub-license terms",
+      "cover_emoji": "🌙",
+      "file_name": "lofi_nights.mp3",
+      "file_url": "https://api.kliqtap.com/uploads/sounds/chill/lofi_nights.mp3"
+    },
+    {
+      "id": "free_dance_beat",
+      "title": "Budots Energy",
+      "artist": "Uppbeat (royalty-free)",
+      "category": "dance",
+      "duration_sec": 30,
+      "is_owned": false,
+      "license": "Uppbeat — verify UGC/sub-license terms",
+      "cover_emoji": "💃",
+      "file_name": "budots_energy.mp3",
+      "file_url": "https://api.kliqtap.com/uploads/sounds/dance/budots_energy.mp3"
+    }
+  ]
+}
