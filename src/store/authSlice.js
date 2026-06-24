@@ -46,6 +46,7 @@ const authInitialState = {
     profilePeekUser: null,
     viewingUserId: null,
     pulseImageUri: null,
+    _fcmRegistered: false, // ⭐️ הוסף את השורה הזאת כאן!
 
     trendingTopics: [],
     featuredCards: [],
@@ -103,8 +104,19 @@ const registerPushTokenSilently = () => {
 
     api.setAuthFailureCallback(logoutCleanup);
 
+    // 🛡️ משתנה גלובלי בתוך הסלייס שזוכר מתי הייתה הבדיקה האחרונה
+    let lastRefreshTime = 0; 
+
     appStateSubscription = AppState.addEventListener('change', async (nextState) => {
         if (nextState !== 'active') return;
+
+        // מנגנון הגנה: אם עברו פחות מ-15 שניות מהבדיקה האחרונה, אנחנו לא עושים כלום
+        const now = Date.now();
+        if (now - lastRefreshTime < 15000) {
+            if (__DEV__) console.log('🛡️ [AuthSlice] Throttle active, skipping duplicate check.');
+            return;
+        }
+        lastRefreshTime = now;
 
         const { token } = get();
         if (!token) return;
@@ -117,22 +129,26 @@ const registerPushTokenSilently = () => {
         } catch (e) {
             if (__DEV__) console.warn('[AuthSlice] Foreground token check failed:', e);
         }
-    });
+        });
 
     return {
         ...authInitialState,
 
-        initialize: async () => {
-            if (get()._isInitializing) return;
-            set({ _isInitializing: true });
+            initialize: async () => {
+            if (!get()._fcmRegistered) {
+            registerPushTokenSilently();
+            set({ _fcmRegistered: true });
+         }
 
-            if (__DEV__) console.log('🚀 [AuthSlice] App initializing...');
+            if (__DEV__) console.log('🚀 [AuthSlice] App initializing... (Sequential Mode)');
+
+            // פונקציית עזר להשהיה קצרה (למניעת הצפת השרת)
+            const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
             try {
                 const { currentAccessToken, currentRefreshToken } = await api.loadTokensFromStorage();
 
                 if (!currentAccessToken) {
-                    if (__DEV__) console.log('[AuthSlice] No token found. Ready for login.');
                     set({ isInitialized: true, token: null, user: null, _isInitializing: false });
                     return;
                 }
@@ -141,48 +157,31 @@ const registerPushTokenSilently = () => {
                 set({ token: currentAccessToken });
 
                 try {
+                    // 1. קודם כל נתוני משתמש בסיסיים
                     const user = await api.fetchAPI('/users/me');
 
                     if (user?.id) {
-                        const isCurrentlyOnboarding = get().needsOnboarding;
-                        const lockedOnboarding = isCurrentlyOnboarding
-                            ? true
-                            : (user.needsOnboarding || false);
+                        set({ user, isInitialized: true, needsOnboarding: user.needsOnboarding || false });
 
-                        set({
-                            user,
-                            isInitialized: true,
-                            needsOnboarding: lockedOnboarding,
-                        });
-
+                        // 2. חיבור הסוקט
                         get().connectSocket?.();
-                        get().refreshAllData?.();
-                        get().fetchSettings?.();
+                        await delay(800); // ⭐️ השהייה קריטית לפני בקשות נוספות
+
+                        // 3. משיכת מידע לפי סדר חשיבות (מדורג)
+                        await get().refreshAllData?.(); 
+                        await delay(800);
+                        
+                        await get().fetchSettings?.();
+                        await delay(800);
+                        
                         registerPushTokenSilently();
-                    } else {
-                        throw new Error('Invalid user object received from API.');
                     }
                 } catch (apiError) {
-                    const errorStr = String(apiError || '');
-
-                    const isThrottled = errorStr.includes('ThrottlerException') || errorStr.includes('429');
-                    const isNetworkError = apiError?.status === 0 || apiError?.name === 'AbortError' || errorStr.includes('timed out');
-                    const isServerError = typeof apiError?.status === 'number' && apiError.status >= 500;
-                    const isDefinitiveAuthFailure = apiError?.status === 401 || apiError?.status === 403;
-
-                    if (isThrottled || isNetworkError || isServerError) {
-                        if (__DEV__) console.warn('[AuthSlice] Transient error during init. Keeping session.', apiError);
-                        set({ isInitialized: true });
-                    } else if (isDefinitiveAuthFailure) {
-                        if (__DEV__) console.warn('[AuthSlice] Token definitively rejected (401/403). Logging out...', apiError);
-                        await logoutCleanup();
-                    } else {
-                        if (__DEV__) console.warn('[AuthSlice] Unknown init error. Keeping session.', apiError);
-                        set({ isInitialized: true });
-                    }
+                    // טיפול בשגיאות 429
+                    if (__DEV__) console.warn('[AuthSlice] Init error, but session kept.', apiError);
+                    set({ isInitialized: true });
                 }
             } catch (e) {
-                if (__DEV__) console.error('[AuthSlice] Init Error:', e);
                 set({ isInitialized: true, user: null, token: null });
             } finally {
                 set({ _isInitializing: false });

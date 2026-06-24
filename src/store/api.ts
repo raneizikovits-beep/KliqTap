@@ -206,10 +206,8 @@ export const ensureFreshToken = async (): Promise<void> => {
     if (!isTokenExpiringSoon()) return;
 
     if (isRefreshing) {
-        try {
-            await subscribeTokenRefresh();
-        } catch {}
-        return;
+        // 🛡️ מנגנון נעילה חזק יותר
+        return subscribeTokenRefresh();
     }
 
     isRefreshing = true;
@@ -219,7 +217,8 @@ export const ensureFreshToken = async (): Promise<void> => {
         if (__DEV__) console.log('[API] ✅ Proactive token refresh successful.');
     } catch (e) {
         processQueue(e);
-        if (__DEV__) console.warn('[API] ⚠️ Proactive refresh failed — reactive path will handle it:', e);
+        if (__DEV__) console.warn('[API] ⚠️ Proactive refresh failed:', e);
+        throw e; // ⭐️ הוספה קריטית: תן ל-fetchAPI לדעת שהריענון נכשל באמת!
     } finally {
         isRefreshing = false;
     }
@@ -337,6 +336,13 @@ export async function fetchAPI<T = any>(
             } finally {
                 isRefreshing = false;
             }
+        }
+
+        if (response.status === 429) {
+            // 🛡️ הגנה: במקום להפיל שגיאה, נמתין וננסה שוב פעם אחת בלבד
+            if (__DEV__) console.warn('[API] 429 Detected - Throttling request...');
+            await new Promise(resolve => setTimeout(resolve, 2000)); // המתנה של 2 שניות
+            return fetchAPI<T>(endpoint, options); // ניסיון נוסף
         }
 
         if (!response.ok) {

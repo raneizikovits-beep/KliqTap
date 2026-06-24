@@ -579,11 +579,12 @@ export default function ChatScreen({ navigation }) {
           keyExtractor={(item, index) => item?.id ? String(item.id) : `msg-${index}`}
           contentContainerStyle={localStyles.listContent}
           onContentSizeChange={() => {
-              if (!isPaginatingRef.current) {
-                  flatListRef.current?.scrollToEnd({ animated: true });
-              } else {
-                  isPaginatingRef.current = false;
-              }
+          // בדיקה: לגלול רק אם יש הודעות
+          if (messages.length > 0 && !isPaginatingRef.current) {
+          flatListRef.current?.scrollToEnd({ animated: true });
+          } else {
+          isPaginatingRef.current = false;
+          }
           }}
           onLayout={() => {
               if (!isPaginatingRef.current) flatListRef.current?.scrollToEnd({ animated: false });

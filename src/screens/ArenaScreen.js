@@ -506,7 +506,16 @@ export default function ArenaScreen({ setSecondSheet }) {
 
   const allChallenges = useMemo(() => {
     if (!weeklyChallenge) return [];
-    const real = {
+
+    // ⭐️ התיקון: מחפשים את הנתון בכל שדה אפשרי, ואם אין - סופרים את האנשים בטבלה!
+    const count = 
+      weeklyChallenge._count?.entries || 
+      weeklyChallenge.entriesCount || 
+      weeklyChallenge.entries || 
+      leaderboard.length || 
+      0;
+
+      const real = {
       id: weeklyChallenge.id,
       title: weeklyChallenge.title || 'Weekly Challenge',
       subtitle: weeklyChallenge.description || '',
@@ -515,12 +524,12 @@ export default function ArenaScreen({ setSecondSheet }) {
       colors: ['#FF4500', '#E91E63', '#7B1FA2'], 
       accentColor: '#FFD700', 
       endsAt: weeklyChallenge.endsAt ? new Date(weeklyChallenge.endsAt) : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-      prize: `${weeklyChallenge._count?.entries || 0} entries — win the crown`,
-      entries: weeklyChallenge._count?.entries || 0,
+      prize: `${count} entries — win the crown`, // 👈 פה התיקון (השתמשנו ב-count)
+      entries: count,                            // 👈 פה התיקון (השתמשנו ב-count)
       active: true,
     };
     return [real];
-  }, [weeklyChallenge]);
+    }, [weeklyChallenge, leaderboard.length]); // 👈 פה התיקון (הוספנו את leaderboard.length)
 
   const selectedChallenge = allChallenges[selectedChallengeIdx] || allChallenges[0];
 
@@ -710,9 +719,13 @@ export default function ArenaScreen({ setSecondSheet }) {
             {leaderboard[1] && (
               <View style={[aStyles.podiumItem, { marginTop: 22 }]}>
                 <View style={[aStyles.podiumAvatar, { borderColor: '#C0C0C0', width: 54, height: 54, borderRadius: 27, backgroundColor: theme.iconBtn }]}>
-                  <Text style={{ color: theme.text, fontWeight: '900', fontSize: 18 }}>
-                    {leaderboard[1].username?.replace('@', '')?.charAt(0)?.toUpperCase()}
-                  </Text>
+                  {leaderboard[1].avatar ? (
+                    <Image source={{ uri: leaderboard[1].avatar }} style={{ width: '100%', height: '100%', borderRadius: 27 }} />
+                  ) : (
+                    <Text style={{ color: theme.text, fontWeight: '900', fontSize: 18 }}>
+                      {leaderboard[1].username?.replace('@', '')?.charAt(0)?.toUpperCase()}
+                    </Text>
+                  )}
                 </View>
                 <Text style={aStyles.podiumEmoji}>🥈</Text>
                 <Text style={[aStyles.podiumName, { color: theme.text }]} numberOfLines={1}>{leaderboard[1].username}</Text>
@@ -727,9 +740,13 @@ export default function ArenaScreen({ setSecondSheet }) {
                   <Text style={{ fontSize: 22 }}>👑</Text>
                 </View>
                 <View style={[aStyles.podiumAvatar, { borderColor: '#FFD200', width: 68, height: 68, borderRadius: 34, backgroundColor: theme.iconBtn, shadowColor: '#FFD200', shadowOpacity: 0.7, shadowRadius: 12, elevation: 10 }]}>
-                  <Text style={{ color: theme.text, fontWeight: '900', fontSize: 24 }}>
-                    {leaderboard[0].username?.replace('@', '')?.charAt(0)?.toUpperCase()}
-                  </Text>
+                  {leaderboard[0].avatar ? (
+                    <Image source={{ uri: leaderboard[0].avatar }} style={{ width: '100%', height: '100%', borderRadius: 34 }} />
+                  ) : (
+                    <Text style={{ color: theme.text, fontWeight: '900', fontSize: 24 }}>
+                      {leaderboard[0].username?.replace('@', '')?.charAt(0)?.toUpperCase()}
+                    </Text>
+                  )}
                 </View>
                 <Text style={[aStyles.podiumName, { color: theme.text }]} numberOfLines={1}>{leaderboard[0].username}</Text>
                 <Text style={[aStyles.podiumPts, { color: '#FFD200', fontSize: 14 }]}>{fmtNum(leaderboard[0].points)}</Text>
@@ -740,9 +757,13 @@ export default function ArenaScreen({ setSecondSheet }) {
             {leaderboard[2] && (
               <View style={[aStyles.podiumItem, { marginTop: 36 }]}>
                 <View style={[aStyles.podiumAvatar, { borderColor: '#CD7F32', width: 48, height: 48, borderRadius: 24, backgroundColor: theme.iconBtn }]}>
-                  <Text style={{ color: theme.text, fontWeight: '900', fontSize: 16 }}>
-                    {leaderboard[2].username?.replace('@', '')?.charAt(0)?.toUpperCase()}
-                  </Text>
+                  {leaderboard[2].avatar ? (
+                    <Image source={{ uri: leaderboard[2].avatar }} style={{ width: '100%', height: '100%', borderRadius: 24 }} />
+                  ) : (
+                    <Text style={{ color: theme.text, fontWeight: '900', fontSize: 16 }}>
+                      {leaderboard[2].username?.replace('@', '')?.charAt(0)?.toUpperCase()}
+                    </Text>
+                  )}
                 </View>
                 <Text style={aStyles.podiumEmoji}>🥉</Text>
                 <Text style={[aStyles.podiumName, { color: theme.text }]} numberOfLines={1}>{leaderboard[2].username}</Text>
@@ -863,13 +884,13 @@ const aStyles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
   },
   entriesText: { color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '800' },
-  heroEmoji: { fontSize: 56, marginBottom: 14, alignSelf: 'flex-start' },
-  heroTitle: { color: '#FFF', fontWeight: '900', fontSize: 26, letterSpacing: -0.5, marginBottom: 6 },
-  heroSub:   { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '500', lineHeight: 20, marginBottom: 14 },
+  heroEmoji: { fontSize: 56, marginBottom: 14, alignSelf: 'center', textAlign: 'center' },
+  heroTitle: { color: '#FFF', fontWeight: '900', fontSize: 26, letterSpacing: -0.5, marginBottom: 6, textAlign: 'center' },
+  heroSub:   { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '500', lineHeight: 20, marginBottom: 14, textAlign: 'center' },
   prizeRow: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
     backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 20, alignSelf: 'flex-start',
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 20, alignSelf: 'center',
     borderWidth: 1, borderColor: 'rgba(255,210,0,0.3)'
   },
   prizeText: { color: '#FFD200', fontWeight: '800', fontSize: 13 },

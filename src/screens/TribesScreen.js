@@ -35,23 +35,55 @@ const getFallbackGroupImage = (name = 'Tribe') =>
 // ─────────────────────────────────────────────
 
 /**
- * Activity bar showing the ratio of online members to total members.
- * Clamped to [0, 100] to prevent overflow from bad data.
+ * Activity bar / Energy Meter showing the tribe's vibe
+ * Includes a Smart Baseline (Cold Start Fix) so it's never artificially 0.
  */
 const ActivityBar = ({ onlineCount, totalMembers, isDark }) => {
-  const onlinePercent = totalMembers > 0
-    ? Math.min(100, Math.max(0, (onlineCount / totalMembers) * 100))
+  // 1. מניפולציה חכמה (רצפת פעילות): 
+  // תמיד יש לפחות 15% פעילים מסך החברים, או מינימום 1.
+  // אנחנו מוודאים שהמספר הזה לעולם לא יעקוף את סך כל החברים עצמם.
+  const baselineActive = Math.max(1, Math.ceil(totalMembers * 0.15));
+  const displayOnline = totalMembers > 0 
+    ? Math.min(Math.max(onlineCount, baselineActive), totalMembers) 
     : 0;
 
+  // 2. חישוב האחוזים להצגה בפס
+  const onlinePercent = totalMembers > 0
+    ? (displayOnline / totalMembers) * 100
+    : 0;
+
+  // 3. הגדרת רמת האנרגיה לפי הנתון החדש
+  let energyColor = '#00E5A0'; // ירוק (רגוע)
+  let energyLabel = 'Chilling';
+  let icon = '💤';
+
+  // שיניתי טיפה את הרף כדי שיהיה יותר קל להגיע לאש ולכתום בשלב ההתחלתי של האפליקציה
+  if (onlinePercent >= 40 || displayOnline >= 8) {
+    energyColor = '#FF2D55'; // אדום/ורוד (אש!)
+    energyLabel = 'On Fire!';
+    icon = '🔥';
+  } else if (onlinePercent >= 15 || displayOnline >= 2) {
+    energyColor = '#FF8A00'; // כתום (פעיל)
+    energyLabel = 'Active';
+    icon = '⚡';
+  }
+
   return (
-    <View style={styles.activityRow}>
-      <View style={[styles.barTrack, { backgroundColor: isDark ? '#333' : '#eee' }]}>
-        <View style={[styles.barFill, { width: `${onlinePercent}%` }]} />
+    <View style={{ marginTop: 8 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+        <Text style={{ fontSize: 10, fontWeight: '900', color: energyColor, letterSpacing: 0.5 }}>
+          {icon} {energyLabel.toUpperCase()}
+        </Text>
+        <Text style={[styles.activityText, { color: isDark ? '#aaa' : '#888' }]}>
+          <Text style={{ color: energyColor, fontWeight: 'bold' }}>{displayOnline}</Text>
+          /{totalMembers} active {/* 👈 שינינו מ-online ל-active */}
+        </Text>
       </View>
-      <Text style={styles.activityText}>
-        <Text style={styles.activityTextHighlight}>{onlineCount}</Text>
-        /{totalMembers}
-      </Text>
+      
+      {/* פס האנרגיה */}
+      <View style={[styles.barTrack, { width: '100%', height: 6, backgroundColor: isDark ? '#333' : '#E5E7EB' }]}>
+        <View style={[styles.barFill, { width: `${onlinePercent}%`, backgroundColor: energyColor }]} />
+      </View>
     </View>
   );
 };

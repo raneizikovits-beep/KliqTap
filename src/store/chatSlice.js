@@ -365,20 +365,29 @@ export const createChatSlice = (set, get) => ({
                 const safeChatId = String(chat.id || chat._id);
 
                 if (chat.lastMessage) {
-                    if (!newHistory[safeChatId] || newHistory[safeChatId].length === 0) {
-                        newHistory[safeChatId] = [{
-                            ...chat.lastMessage,
-                            id: String(chat.lastMessage._id || chat.lastMessage.id),
-                            text: chat.lastMessage.body || chat.lastMessage.text,
-                            body: chat.lastMessage.body || chat.lastMessage.text,
-                            time: chat.lastMessage.time || chat.lastMessage.createdAt,
-                            isRead: chat.lastMessage.isRead ?? true,
-                            sender: normalizeSender(chat.lastMessage.sender || chat.lastMessage.user),
-                            // ⭐️ הוספת תמיכה בתמונות מהשרת
-                            attachmentUrl: chat.lastMessage.attachmentUrl || chat.lastMessage.imageUrl || chat.lastMessage.image || chat.lastMessage.fileUrl || null,
-                        }];
-                    }
-                }
+    const existingHistory = newHistory[safeChatId] || [];
+    
+    // בדיקה: האם ההודעה הזו כבר קיימת בסטייט שלנו?
+    const msgId = String(chat.lastMessage._id || chat.lastMessage.id);
+    const alreadyExists = existingHistory.some(m => String(m.id) === msgId);
+
+    // אם היא לא קיימת - נוסיף אותה. אם היא קיימת - לא עושים כלום!
+    if (!alreadyExists) {
+        newHistory[safeChatId] = [
+            ...existingHistory,
+            {
+                ...chat.lastMessage,
+                id: msgId,
+                text: chat.lastMessage.body || chat.lastMessage.text,
+                body: chat.lastMessage.body || chat.lastMessage.text,
+                time: chat.lastMessage.time || chat.lastMessage.createdAt,
+                isRead: chat.lastMessage.isRead ?? true,
+                sender: normalizeSender(chat.lastMessage.sender || chat.lastMessage.user),
+                attachmentUrl: chat.lastMessage.attachmentUrl || chat.lastMessage.imageUrl || chat.lastMessage.image || chat.lastMessage.fileUrl || null,
+            }
+        ];
+    }
+}
 
                 const safeOtherUserId = chat.otherUserId ? String(chat.otherUserId) : null;
 
@@ -720,9 +729,14 @@ export const createChatSlice = (set, get) => ({
         });
     },
 
-    setChatHistory: (chatId, rawMessages) => {
+        setChatHistory: (chatId, rawMessages) => {
         const safeChatId = String(chatId);
-        if (!Array.isArray(rawMessages)) return;
+        
+        // 🛡️ ההגנה: אם המערך ריק או לא תקין, אנחנו עוצרים ולא נותנים לסטייט להימחק
+        if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
+            if (__DEV__) console.log(`[ChatSlice] Skipping setChatHistory for ${safeChatId} - no messages to process.`);
+            return;
+        }
 
         const newUserCacheEntries = {};
 
@@ -756,7 +770,6 @@ export const createChatSlice = (set, get) => ({
                     if (!raw.updatedAt || !raw.createdAt) return false;
                     return Math.abs(new Date(raw.updatedAt) - new Date(raw.createdAt)) > 1000;
                 })(),
-                // ⭐️ FIX: הוספת תמיכה בתמונות מההיסטוריה
                 attachmentUrl: raw.attachmentUrl || raw.imageUrl || raw.image || raw.fileUrl || null,
             };
         });
@@ -770,9 +783,13 @@ export const createChatSlice = (set, get) => ({
                 };
             }
 
+            // קבלת ההיסטוריה הקיימת
             const existingHistory = state.chatHistory[safeChatId] || [];
+            
+            // שילוב ההודעות החדשות עם הקיימות
             const combined = [...normalizedMessages, ...existingHistory];
             
+            // סינון כפילויות לפי ID
             const seen = new Set();
             const deduplicated = combined.filter(m => {
                 if (seen.has(m.id)) return false;
@@ -780,6 +797,7 @@ export const createChatSlice = (set, get) => ({
                 return true;
             });
 
+            // מיון לפי זמן
             deduplicated.sort((a, b) => new Date(a.time) - new Date(b.time));
 
             return {

@@ -116,21 +116,23 @@ class ChatService {
     }
 
     // ─── [FIX-ROOT] Re-join all known rooms after (re)connect ─
-    _rejoinAllRooms() {
+        async _rejoinAllRooms() {
         if (!this.socket?.connected) return;
+        const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
         if (this.activeRooms.size > 0) {
-            if (__DEV__) console.log(`[Socket.io] Re-joining ${this.activeRooms.size} chat room(s):`, [...this.activeRooms]);
-            this.activeRooms.forEach(chatId => {
+            for (const chatId of this.activeRooms) {
+                if (__DEV__) console.log(`[Socket.io] Joining chat room: ${chatId}`);
                 this.socket.emit('joinChat', chatId);
-            });
+                await delay(300); // ⭐️ השהייה של 300 מילי-שניות בין חדר לחדר
+            }
         }
 
         if (this.activeVoiceRooms.size > 0) {
-            if (__DEV__) console.log(`[Socket.io] Re-joining ${this.activeVoiceRooms.size} voice room(s):`, [...this.activeVoiceRooms]);
-            this.activeVoiceRooms.forEach(roomId => {
+            for (const roomId of this.activeVoiceRooms) {
                 this.socket.emit('join-voice-room', { roomId });
-            });
+                await delay(300);
+            }
         }
     }
 

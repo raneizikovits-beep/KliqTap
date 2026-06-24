@@ -9,9 +9,9 @@
     "scheme": "kliqtap",
     "newArchEnabled": false,
     "splash": {
-      "image": "./src/assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+    "image": "./src/assets/blank-splash.png",
+    "resizeMode": "contain",
+    "backgroundColor": "#ffffff"
     },
     "updates": {
       "url": "https://u.expo.dev/4fd97fe0-dfbc-4103-aace-3abca76bb5d3"
