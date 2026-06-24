@@ -1,4 +1,15 @@
 // client/src/components/CommonComponents.js
+//
+// [V1.1 CHANGES — Engineering Audit Fixes]:
+//   [FIX LOW]  PulseItem: vibeColors was missing a 'Tired' entry even though
+//              vibeEmojis has one — a "Tired" vibe fell through to the generic
+//              fallback border color instead of getting its own themed color.
+//   [FIX PERF] vibeColors / vibeEmojis hoisted to module level — these are static
+//              lookup maps with zero prop dependency; they were being recreated
+//              as new objects inside the component body on every render.
+//
+// IconChip, MemberTile, SupportCard, BadgeIcon, QuestItem are unchanged — stable,
+// readable, no defects found.
 
 import React, { memo } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
@@ -16,29 +27,33 @@ export const IconChip = memo(({ label, icon, onPress }) => {
 });
 
 // --- 2. PulseItem ---
+
+// [FIX PERF] Hoisted out of the component — static maps, no prop dependency.
+// [FIX LOW]  Added 'Tired' to vibeColors (vibeEmojis already had it; this map
+//            was the one place a "Tired" pulse fell through to the generic
+//            fallback border color instead of getting its own themed color).
+const VIBE_COLORS = Object.freeze({
+    Party:   '#FF2D55',
+    Happy:   brand.yellow,
+    Focused: brand.purple,
+    Love:    '#FF3B30',
+    Tired:   '#64748B', // slate — calm, sleepy tone, distinct from the others
+});
+
+const VIBE_EMOJIS = Object.freeze({
+    Happy:   '😊',
+    Tired:   '😴',
+    Party:   '🔥',
+    Love:    '😍',
+    Focused: '🧠',
+});
+
 export const PulseItem = memo(({ pulse, onPress, onLongPress }) => {
     const avatarUrl = pulse?.author?.avatarUrl || pulse?.user?.avatarUrl || 'https://via.placeholder.com/150';
     const username = pulse?.author?.username || pulse?.user?.username || 'User';
-    
-    // Dynamic border color mapping
-    const vibeColors = {
-        Party: '#FF2D55',
-        Happy: brand.yellow,
-        Focused: brand.purple,
-        Love: '#FF3B30'
-    };
-    
-    let borderColor = vibeColors[pulse?.vibe] || (pulse?.isNew ? brand.blue : '#E0E0E0');
 
-    // Emoji mapping
-    const vibeEmojis = {
-        Happy: '😊',
-        Tired: '😴',
-        Party: '🔥',
-        Love: '😍',
-        Focused: '🧠'
-    };
-    const currentEmoji = vibeEmojis[pulse?.vibe] || '✨';
+    const borderColor = VIBE_COLORS[pulse?.vibe] || (pulse?.isNew ? brand.blue : '#E0E0E0');
+    const currentEmoji = VIBE_EMOJIS[pulse?.vibe] || '✨';
 
     return (
       <TouchableOpacity 

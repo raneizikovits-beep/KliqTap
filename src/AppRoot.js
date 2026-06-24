@@ -395,7 +395,8 @@ export default function AppRoot() {
     };
 
     fetchFastLocation();
-  }, [user, setUserLocation]);
+  // user?.id — stable identity; avoids re-fetching GPS on every user-object refresh
+  }, [user?.id, setUserLocation]);
 
   // ─── Profile deep-link trigger ────────────
   useEffect(() => {
@@ -806,7 +807,7 @@ export default function AppRoot() {
   // ─────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? "#000" : "#F9FAFB" }}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: isDark ? "#000" : "#F9FAFB" }}>
       <StatusBar style={isDark ? "light" : "dark"} />
 
       <View style={[styles.appFrame, { backgroundColor: "transparent" }]}>
@@ -915,6 +916,7 @@ export default function AppRoot() {
             {
               backgroundColor: isDark ? "#1C1C1E" : "#fff",
               borderTopColor:  isDark ? "#333"    : "#eee",
+              borderTopWidth: StyleSheet.hairlineWidth, // אוטם חריצים (1px) בין המסך לטאב
             },
             Platform.OS === "web" && {
               position:    "fixed",
@@ -927,8 +929,11 @@ export default function AppRoot() {
                 ? "calc(8px + env(safe-area-inset-bottom, 0px))"
                 : 8,
             },
-            Platform.OS !== "web" &&
-              insets.bottom > 0 && { paddingBottom: insets.bottom },
+            Platform.OS !== "web" && {
+              // הטאב-בר עצמו מקבל את השוליים, והגובה מחושב במדויק
+              paddingBottom: insets.bottom > 0 ? insets.bottom : 0,
+              height: 60 + (insets.bottom > 0 ? insets.bottom : 0),
+            },
           ]}
         >
           {TABS.map((tabItem) => (

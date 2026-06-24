@@ -2,7 +2,7 @@
   "expo": {
     "name": "KliqTap",
     "slug": "kliqtap-new-app",
-    "version": "1.1.5",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./src/assets/icon.png",
     "userInterfaceStyle": "light",
@@ -13,10 +13,16 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "updates": {
+      "url": "https://u.expo.dev/4fd97fe0-dfbc-4103-aace-3abca76bb5d3"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kliq.tap",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
         "NSCameraUsageDescription": "KliqTap needs camera access to let you share photos, videos, and stories.",
         "NSMicrophoneUsageDescription": "KliqTap needs microphone access for voice rooms, video calls, and voice notes.",
@@ -32,7 +38,7 @@
       }
     },
     "android": {
-      "versionCode": 20,
+      "versionCode": 21,
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/adaptive-icon.png",
@@ -40,6 +46,11 @@
       },
       "package": "com.kliq.tap",
       "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCDVaG7_kK1EZ9UdSp-DUscOCGvQ6aWK1w"
+        }
+      },
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
@@ -108,7 +119,9 @@
       ],
       "expo-secure-store",
       "expo-font",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "@react-native-firebase/app",
+      "@react-native-firebase/analytics"
     ],
     "owner": "kliqtap",
     "extra": {

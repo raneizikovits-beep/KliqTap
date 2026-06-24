@@ -17,6 +17,7 @@ import { useAiStore } from '../store/useAiStore';
 import { useAppStore } from '../store/useAppStore';
 import AiChatBubble from '../components/AiChatBubble';
 import { brand } from '../constants/data';
+import { trackEvent } from '../utils/analytics'; // 👈 הייבוא החדש שלנו
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS (hoisted out of render — never re-allocate)
@@ -148,6 +149,10 @@ export default function BotStudioScreen({ setTab, onClose }) {
   const handleSend = useCallback(() => {
     const trimmed = inputText.trim();
     if (!trimmed || !activeAgentId) return;
+    
+    // 👇 דיווח על שליחת הודעה ל-AI
+    trackEvent('ai_message_sent', { agentId: activeAgentId });
+
     sendMessage(token, activeAgentId, trimmed);
     setInputText('');
   }, [inputText, activeAgentId, sendMessage, token]);
@@ -158,10 +163,13 @@ export default function BotStudioScreen({ setTab, onClose }) {
     Keyboard.dismiss();
     const success = await createCustomAgent(token, trimmed);
     if (success) {
+      // 👇 מדידה של יצירת בוט חדש (כולל אורך הפרומפט כדי לדעת כמה השקיעו)
+      trackEvent('ai_agent_created', { prompt_length: trimmed.length, userId: userId });
+      
       setAgentPrompt('');
       Alert.alert('Success! ✨', 'Your custom AI agent is ready to chat!');
     }
-  }, [agentPrompt, createCustomAgent, token]);
+  }, [agentPrompt, createCustomAgent, token, userId]); // 👈 הוספנו את userId
 
   const handleDeleteAgent = useCallback((agentId, isCreator) => {
     Alert.alert(

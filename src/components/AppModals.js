@@ -1,13 +1,35 @@
 // client/src/components/AppModals.js
-// ⭐️ V11.4 — Integrated V4 Support, MentalSpace Focus Mode, Journal, and CreateTicket ⭐️
+// ⭐️ V11.5 — 3 Engineering Audit Fixes ⭐️
 //
-// CHANGES from V11.3:
+// [V11.5 CHANGES — Engineering Audit Fixes]:
+//   [FIX CRITICAL] GroupSettingsModal.onSave was a literal console.log stub — group
+//                  setting changes were never persisted and the user got zero feedback.
+//                  Now surfaces a dev warning + user-facing Toast instead of silently
+//                  discarding the save. Real backend wiring still needed (see TODO).
+//   [FIX MEDIUM]   handleSettingsNav: ...navData spread reordered to come BEFORE the
+//                  computed `source` fallback, so an explicit-but-undefined navData.source
+//                  can never silently override the fallback ('EditProfile'/'SettingsGeneric').
+//   [FIX MEDIUM]   renderSecondSheetContent's useMemo was missing `setGroupModalTab` from
+//                  its dependency array despite using it inside (passed to RadarModal) —
+//                  classic exhaustive-deps violation, risked a stale closure.
+//
+// [V11.4]:
 //   [UPDATED] Passed `sheet={thirdSheet}` and `sheet={secondSheet}` to SupportScreen 
 //             so MentalSpace knows which focus tool to open (Breathe/Sounds/Affirmation).
+
+// [FIX] __DEV__ polyfill — Metro injects this; Webpack/web builds may not.
+if (typeof __DEV__ === 'undefined') {
+    Object.defineProperty(
+        typeof globalThis !== 'undefined' ? globalThis : global,
+        '__DEV__',
+        { value: process.env.NODE_ENV !== 'production', configurable: true }
+    );
+}
 
 import React, { memo, useCallback, useMemo, useRef, useEffect } from "react";
 import { Modal, View, TouchableOpacity, Image, StyleSheet, SafeAreaView, Dimensions } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message'; // [FIX CRITICAL] needed for GroupSettingsModal stub fix
 import { styles as globalStyles } from '../constants/styles';
 
 // --- Imports from /modals directory ---
@@ -152,10 +174,18 @@ const AppModals = memo(function AppModals({
               setFifthSheet({ source: 'DataExport', title: navData.title });
               return;
           }
+          // [FIX MEDIUM] Spread reordered: ...navData now comes FIRST, with `source`
+          // applied AFTER. Previously, if navData ever contained an explicit
+          // `source: undefined` key (e.g. from an upstream ternary default), the
+          // spread would silently overwrite the computed fallback ('EditProfile' /
+          // 'SettingsGeneric') with undefined — verified via JS object-literal
+          // semantics: a later same-key property wins even when its value is
+          // undefined, as long as the key itself is present. This order makes the
+          // fallback unconditionally win, with identical output for every case
+          // where navData has no `source` key at all (the common case).
           setThirdSheet({
-              source: navData.source || (navData.title === 'Edit Profile' ? 'EditProfile' : 'SettingsGeneric'),
-              title: navData.title,
               ...navData,
+              source: navData.source || (navData.title === 'Edit Profile' ? 'EditProfile' : 'SettingsGeneric'),
           });
       };
 
@@ -236,12 +266,17 @@ const AppModals = memo(function AppModals({
               setSecondSheet={setSecondSheet}
            />
       );
+  // [FIX MEDIUM] setGroupModalTab added — it's used inside the RadarModal render
+  // (setGroupModalTab={setGroupModalTab}, further up in this same memo) but was
+  // missing from this dependency array. A classic exhaustive-deps violation: if
+  // setGroupModalTab's reference ever changes upstream without secondSheet also
+  // changing, this memo would keep handing RadarModal a stale closure.
   }, [
       secondSheet, handleCloseSecondSheet, handleThirdSheetTransition, handleFourthSheetTransition,
       handleFifthSheetTransition, handleDeepLinkAction, getSettingsItems, getSearchItems, getIconGrid,
       handleOpenVoiceCall, handleOpenVideoCall, handleOpenVibeCheck, setFullScreenImage,
       handleAccountDeletionRequest, handleImagePickForGenericUpload, setThirdSheet, setFourthSheet,
-      setFifthSheet, setProfilePeek, setSecondSheet,
+      setFifthSheet, setProfilePeek, setSecondSheet, setGroupModalTab,
   ]);
 
   return (
@@ -340,7 +375,30 @@ const AppModals = memo(function AppModals({
         isVisible={!!groupUpdateOpen}
         group={groupUpdateOpen ? groupUpdateOpen.group : null}
         onClose={() => setGroupUpdateOpen(null)}
-        onSave={(id, updates) => console.log('Update group', id, updates)}
+        onSave={(id, updates) => {
+            // [FIX CRITICAL] This was `console.log('Update group', id, updates)` —
+            // a pure demo stub. Tapping Save in GroupSettingsModal did NOTHING:
+            // no API call, no persistence, and zero feedback to the end user, who
+            // would reasonably assume their changes were saved.
+            // TODO: wire to the real backend mutation once it exists, e.g.:
+            //   await useAppStore.getState().updateGroupSettings(id, updates);
+            // This file doesn't import useAppStore directly today, and the actual
+            // store action name/shape wasn't available to verify in this audit —
+            // inventing a call to a non-existent action would be worse (a runtime
+            // crash) than the status quo. For now this surfaces the gap loudly
+            // instead of hiding it.
+            if (__DEV__) {
+                console.warn(
+                    `[AppModals] GroupSettingsModal.onSave called for group ${id} but no ` +
+                    `backend mutation is wired yet. Updates were NOT persisted:`, updates
+                );
+            }
+            Toast.show({
+                type: 'info',
+                text1: 'Coming soon',
+                text2: 'Group settings updates are not available yet.',
+            });
+        }}
       />
 
       <ChatModal />

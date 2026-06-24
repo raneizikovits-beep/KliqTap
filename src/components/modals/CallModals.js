@@ -23,11 +23,28 @@
 import React, { useEffect, useRef } from 'react';
 import {
     View, Text, TouchableOpacity, ScrollView,
-    StyleSheet, useWindowDimensions, Platform, Animated, ActivityIndicator, Modal
+    StyleSheet, useWindowDimensions, Platform, Animated, ActivityIndicator, Modal,
+    Alert  // ← was missing: used by Report participant button → ReferenceError in prod
 } from 'react-native';
 import { useAppStore } from '../../store/useAppStore';
 import * as Data from '../../constants/data';
 import { Ionicons } from '@expo/vector-icons';
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
+
+
+// ─── Security Report Helper ───────────────────────────────────────────────────
+async function _submitSecurityReport(reportedId, reason, token) {
+    if (!reportedId || !token) return false;
+    try {
+        const resp = await fetch('https://api.kliqtap.com/security/report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ reportedId: String(reportedId), reason }),
+        });
+        return resp.ok;
+    } catch { return false; }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ────────────────────────────────────────────────────────────────
 let RTCView = null;
@@ -301,6 +318,7 @@ export const IncomingCallModal = ({ onAccept, onDecline }) => {
 
     const handleAccept = async () => {
         const snapshot = incomingCall;
+        trackEvent('call_accepted', { isVideo: snapshot?.isVideo }); // 👈 מודד מענה לשיחה
         try {
             if (acceptCall && snapshot?.callId) {
                 await acceptCall(snapshot.callId);
@@ -313,6 +331,7 @@ export const IncomingCallModal = ({ onAccept, onDecline }) => {
 
     const handleDecline = () => {
         const snapshot = incomingCall;
+        trackEvent('call_declined', { isVideo: snapshot?.isVideo }); // 👈 מודד דחיית שיחה
         if (declineCall && snapshot?.callId) declineCall(snapshot.callId);
         if (onDecline) onDecline(snapshot);
     };
@@ -437,7 +456,7 @@ export const VideoCallModal = ({ isOpen, onClose, callId }) => {
         if (isOpen && activeCallId && currentVideoRoomId !== activeCallId) {
             if (hasJoinedRef.current !== activeCallId && joinVoiceRoom) {
                 hasJoinedRef.current = activeCallId;
-                console.log("Joining Video Room (Locked): ", activeCallId);
+                if (__DEV__) console.log("[VideoCallModal] Joining room:", activeCallId);
                 joinVoiceRoom(activeCallId, true);
             }
         }
@@ -448,6 +467,18 @@ export const VideoCallModal = ({ isOpen, onClose, callId }) => {
         if (endCall && activeCallId) endCall(activeCallId);
         if (onClose) onClose();
     };
+
+    // [FIX] Remote-side disconnect: when the other party ends the call, the store
+    // clears currentCallId + currentVideoRoomId, but AppRoot's `isOpen` (videoModalOpen)
+    // is still true. isActuallyOpen = isOpen || false = true → modal stuck open.
+    // Solution: once we've actually joined (hasJoinedRef is set) and the store clears
+    // both IDs, fire onClose so AppRoot resets videoModalOpen to false.
+    useEffect(() => {
+        if (isOpen && hasJoinedRef.current && !activeCallId && !currentVideoRoomId) {
+            hasJoinedRef.current = null;
+            onClose?.();
+        }
+    }, [isOpen, activeCallId, currentVideoRoomId, onClose]);
 
     const peerStreamList = peerStreams ? Object.entries(peerStreams) : [];
     const mainStream = peerStreamList.length > 0 ? peerStreamList[0][1] : localStream;
@@ -605,7 +636,7 @@ export const VoiceCallModal = ({ isOpen, onClose, onSwitchToVideo, callId }) => 
         if (isOpen && activeCallId && currentVoiceRoomId !== activeCallId) {
             if (hasJoinedRef.current !== activeCallId && joinVoiceRoom) {
                 hasJoinedRef.current = activeCallId;
-                console.log("Joining Voice Room (Locked): ", activeCallId);
+                if (__DEV__) console.log("[VoiceCallModal] Joining room:", activeCallId);
                 joinVoiceRoom(activeCallId, false);
             }
         }
@@ -616,6 +647,17 @@ export const VoiceCallModal = ({ isOpen, onClose, onSwitchToVideo, callId }) => 
         if (endCall && activeCallId) endCall(activeCallId);
         if (onClose) onClose();
     };
+
+    // [FIX] Remote-side disconnect: mirror of the VideoCallModal fix above.
+    // When the caller ends the call, the store clears currentCallId +
+    // currentVoiceRoomId but AppRoot's voiceModalOpen is still true.
+    // We watch those store values; once they're cleared after a join, fire onClose.
+    useEffect(() => {
+        if (isOpen && hasJoinedRef.current && !activeCallId && !currentVoiceRoomId) {
+            hasJoinedRef.current = null;
+            onClose?.();
+        }
+    }, [isOpen, activeCallId, currentVoiceRoomId, onClose]);
 
     const peerStreamList = peerStreams ? Object.entries(peerStreams) : [];
 
@@ -679,6 +721,27 @@ export const VoiceCallModal = ({ isOpen, onClose, onSwitchToVideo, callId }) => 
                                     </Text>
                                     <View style={{ flex: 1 }} />
                                     <Ionicons name="stats-chart" size={14} color={Data.brand.green} />
+                                    {/* 🚩 Report participant — small flag, non-intrusive */}
+                                    <TouchableOpacity
+                                        style={{ marginLeft: 10, padding: 4 }}
+                                        onPress={() => {
+                                            const targetId = userId;
+                                            const storeToken = useAppStore.getState?.()?.token;
+                                            Alert.alert(
+                                                '🚩 Report Participant',
+                                                'Why are you reporting this person?',
+                                                [
+                                                    { text: 'Cancel', style: 'cancel' },
+                                                    { text: 'Harassment', onPress: async () => { const ok = await _submitSecurityReport(targetId, 'harassment', storeToken); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Report submitted.' : 'Try again.'); } },
+                                                    { text: 'Inappropriate', onPress: async () => { const ok = await _submitSecurityReport(targetId, 'inappropriate_content', storeToken); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Report submitted.' : 'Try again.'); } },
+                                                    { text: 'Spam / Scam', onPress: async () => { const ok = await _submitSecurityReport(targetId, 'spam', storeToken); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Report submitted.' : 'Try again.'); } },
+                                                ],
+                                            );
+                                        }}
+                                        accessibilityLabel="Report this participant"
+                                    >
+                                        <Ionicons name="flag-outline" size={13} color="#555" />
+                                    </TouchableOpacity>
                                 </View>
                             ))}
                             {peerStreamList.length === 0 && (

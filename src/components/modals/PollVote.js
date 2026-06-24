@@ -15,6 +15,23 @@
  *         `absoluteFill` with no defined height — on some devices the emojis
  *         spawn off-screen. Fixed by anchoring to SCREEN_HEIGHT bottom.
  *
+ * [V1.1 — Engineering Audit Fixes]:
+ * [BUG]   `Dimensions.get('window')` was captured ONCE at module load — same
+ *         rotation/resize bug found in 6 sibling files in earlier audit passes
+ *         (TopicChat, VideoLab, VoiceClip, StoryCreateModal, PhotoStudio).
+ *         Fixed with useWindowDimensions() in both PollVote and HypeEmoji
+ *         (HypeEmoji needs its own call — it's a separate component, so the
+ *         hook can't be shared via a module-level variable).
+ * [NOTE]  INITIAL_POLL is 100% static, hardcoded seed data with zero backend
+ *         interaction — every user sees the identical 4,520 / 3,100 / 890 vote
+ *         split regardless of how many real people have actually voted, and a
+ *         vote is never persisted past this component's local state (closing
+ *         and reopening resets to the same hardcoded split). trackEvent does
+ *         fire on vote, so at least product analytics sees real activity even
+ *         though the publicly-displayed tally is fake. No confirmed backend
+ *         poll-results endpoint exists to wire this to, so this is documented
+ *         here rather than guessing at one.
+ *
  * [BUG]   floatingEmojis cleared after 2500 ms via setTimeout but
  *         HypeAnimation's own animation runs 2200 ms — if the component
  *         re-renders between start and end, the Animated node is recycled.
@@ -35,14 +52,13 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
-    Animated, Dimensions, ImageBackground,
+    Animated, useWindowDimensions, ImageBackground,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const BG_URL = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000&auto=format&fit=crop';
 
@@ -55,6 +71,9 @@ const INITIAL_POLL = [
 
 // ─────────────────────────────────────────────────────────────────────────
 export const PollVote = ({ sheet, onClose, isDark }) => {
+    // [FIX] Reactive — re-renders on rotation/resize, unlike Dimensions.get('window')
+    // captured once at module load.
+    const { height: SCREEN_HEIGHT } = useWindowDimensions();
     const [hasVoted,       setHasVoted]       = useState(false);
     const [selectedIndex,  setSelectedIndex]  = useState(null);
     const [floatingEmojis, setFloatingEmojis] = useState([]);
@@ -93,6 +112,7 @@ export const PollVote = ({ sheet, onClose, isDark }) => {
     // ── Vote handler (immutable update) ───────────────────────────────────
     const handleVote = useCallback((index) => {
         if (hasVoted) return;
+        trackEvent('poll_voted', { optionIndex: index }); // 👈 הדיווח
         setSelectedIndex(index);
         setHasVoted(true);
         setPollData(prev =>
@@ -115,7 +135,7 @@ export const PollVote = ({ sheet, onClose, isDark }) => {
     }, []);
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { height: SCREEN_HEIGHT * 0.85 }]}>
             <ImageBackground source={{ uri: BG_URL }} style={StyleSheet.absoluteFill} blurRadius={18}>
                 <View style={styles.overlay} />
 
@@ -273,6 +293,8 @@ export const PollVote = ({ sheet, onClose, isDark }) => {
 
 // ── Floating emoji component ───────────────────────────────────────────────
 const HypeEmoji = ({ emoji, left }) => {
+    // [FIX] Reactive — see PollVote's note above for why.
+    const { height: SCREEN_HEIGHT } = useWindowDimensions();
     const floatAnim = useRef(new Animated.Value(0)).current;
     const fadeAnim  = useRef(new Animated.Value(1)).current;
 
@@ -309,7 +331,7 @@ const HypeEmoji = ({ emoji, left }) => {
 // ── Styles ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
     container: {
-        height: SCREEN_HEIGHT * 0.85,
+        // height applied via inline style merge at the render call site — see above.
         width: '100%',
         overflow: 'hidden',
         borderRadius: 32,

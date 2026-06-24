@@ -5,7 +5,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, Image,
   RefreshControl, Alert, ActivityIndicator, StyleSheet,
-  Dimensions, Modal, Platform, TextInput, KeyboardAvoidingView
+  Dimensions, Modal, Platform, TextInput, KeyboardAvoidingView, FlatList
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ import { styles as globalStyles } from '../constants/styles';
 import { useAppStore } from '../store/useAppStore';
 import PostCard from '../components/PostCard';
 import { PostCommentsModal } from '../components/modals/PostCommentsModal';
+import { trackEvent } from '../utils/analytics'; // 👈 הייבוא החדש שלנו
 
 // ─────────────────────────────────────────────
 // Constants
@@ -149,42 +150,123 @@ const ImageViewerModal = ({ uri, onClose }) => (
 /**
  * Cover photo with gradient overlay and optional edit affordance.
  */
-const CoverPhoto = ({ uri, isMe, isLoading, isDark, onPress }) => (
-  <TouchableOpacity
-    style={[styles.fullCoverContainer, { backgroundColor: isDark ? '#1C1C1E' : '#eee' }]}
-    onPress={onPress}
-    activeOpacity={isMe ? 0.95 : 0.8}
-    accessibilityLabel={isMe ? 'Change cover photo' : 'View cover photo'}
-  >
-    <Image source={{ uri }} style={styles.coverImage} />
-    <LinearGradient
-      colors={['transparent', isDark ? '#000' : 'rgba(0,0,0,0.7)']}
-      style={styles.coverGradient}
-    />
-    {isMe && (
-      <View style={styles.coverEditIcon}>
-        <Ionicons name="camera-outline" size={16} color="#fff" />
-      </View>
-    )}
-    {isLoading && <ActivityIndicator color="#fff" style={styles.loaderCenter} />}
-  </TouchableOpacity>
-);
+const CoverPhoto = ({ uri, isMe, isLoading, isDark, onPress }) => {
+  // Same pre-validation pattern as Avatar — onError doesn't fire for null URIs on Chrome.
+  const [coverErrored, setCoverErrored] = React.useState(false);
+  const resolvedUri = (isUsableUri(uri) && !coverErrored) ? uri : GENERIC_COVER;
+  return (
+    <TouchableOpacity
+      style={[styles.fullCoverContainer, { backgroundColor: isDark ? '#1C1C1E' : '#eee' }]}
+      onPress={onPress}
+      activeOpacity={isMe ? 0.95 : 0.8}
+      accessibilityLabel={isMe ? 'Change cover photo' : 'View cover photo'}
+    >
+      <Image
+        source={{ uri: resolvedUri }}
+        style={styles.coverImage}
+        onError={() => { if (!coverErrored) setCoverErrored(true); }}
+      />
+      <LinearGradient
+        colors={['transparent', isDark ? '#000' : 'rgba(0,0,0,0.7)']}
+        style={styles.coverGradient}
+      />
+      {isMe && (
+        <View style={styles.coverEditIcon}>
+          <Ionicons name="camera-outline" size={16} color="#fff" />
+        </View>
+      )}
+      {isLoading && <ActivityIndicator color="#fff" style={styles.loaderCenter} />}
+    </TouchableOpacity>
+  );
+};
 
 /**
  * Avatar with loading indicator and tap-to-edit / tap-to-view logic.
  */
-const Avatar = ({ uri, isMe, isLoading, isDark, onPress }) => (
-  <View style={[styles.avatarWrapper, { borderColor: isDark ? '#000' : '#fff', backgroundColor: isDark ? '#000' : '#fff' }]}>
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      accessibilityLabel={isMe ? 'Change avatar' : 'View avatar'}
-    >
-      <Image source={{ uri }} style={styles.mainAvatar} />
-      {isLoading && <ActivityIndicator color="#fff" style={styles.loaderCenter} />}
-    </TouchableOpacity>
-  </View>
-);
+// ─── Avatar URI validation ───────────────────────────────────────────────────
+//
+// ROOT CAUSE of "white avatar on Chrome":
+//   React Native Web's <Image> does NOT fire onError when the URI is
+//   null / '' / 'null' / 'undefined' / a local require() number.
+//   In those cases no HTTP request is made, so there is no network error to
+//   catch. The component just renders an empty white box.
+//
+// SOLUTION: validate the URI *before* passing it to <Image>.
+//   Only accept strings that look like real network or data URLs.
+//   Anything else → use AVATAR_FALLBACK_URL immediately, no onError needed.
+//   onError is still kept as a second safety net for broken-but-valid URLs.
+//
+// AVATAR_FALLBACK_URL uses the Gravatar "mystery person" image via HTTPS — no
+// auth needed, always available, no CORS restrictions for <img> tags.
+const AVATAR_FALLBACK_URL =
+  'https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y&s=200';
+
+/**
+ * Returns true only for strings that can safely be used as a network URI.
+ * Rejects: null, undefined, numbers (local require results), '' , 'null', 'undefined'.
+ */
+function isUsableUri(value) {
+  if (!value || typeof value === 'number') return false;
+  const s = String(value).trim();
+  if (!s || s === 'null' || s === 'undefined') return false;
+  // Accept http(s), data URIs, blob URLs, and file:// paths (native only)
+  return (
+    s.startsWith('http://') ||
+    s.startsWith('https://') ||
+    s.startsWith('data:') ||
+    s.startsWith('blob:') ||
+    s.startsWith('file://')
+  );
+}
+
+const Avatar = ({ uri, name, isMe, isLoading, isDark, onPress }) => {
+  const [networkErrored, setNetworkErrored] = React.useState(false);
+  const resolvedUri = (isUsableUri(uri) && !networkErrored) ? uri : null;
+  const initial = name ? String(name).charAt(0).toUpperCase() : '?';
+
+  return (
+    <View style={[styles.avatarWrapper, { borderColor: isDark ? '#000' : '#fff', backgroundColor: isDark ? '#000' : '#fff' }]}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.8}
+        accessibilityLabel={isMe ? 'Change avatar' : 'View avatar'}
+      >
+        {/* ── Layer 1: Initials circle — ALWAYS visible ────────────────────────
+            This is the root fix for the blank white circle on Chrome.
+            React Native Web does NOT fire onError when the URI is null / 'null'
+            / undefined / empty, so the previous conditional render left a
+            white box whenever the URI was invalid. Now the initials circle is
+            always rendered first, and the image simply overlays it. If the
+            image never loads (any reason), the initial shows through. */}
+        <View style={[styles.mainAvatar, styles.avatarInitialCircle, { backgroundColor: Data.brand.blue }]}>
+          <Text style={styles.avatarInitialText}>{initial}</Text>
+        </View>
+
+        {/* ── Layer 2: Real photo — absolute, overlays the initials ────────── */}
+        {resolvedUri && (
+          <Image
+            source={{ uri: resolvedUri }}
+            style={[styles.mainAvatar, { position: 'absolute', top: 0, left: 0 }]}
+            onError={() => { if (!networkErrored) setNetworkErrored(true); }}
+          />
+        )}
+
+        {/* ── Layer 3: Camera badge (own profile only) ─────────────────────────
+            Replaced the old full-circle dark overlay (which obscured the photo
+            and showed the camera icon dead-centre in an intrusive way on mobile)
+            with a small badge in the bottom-right corner — same pattern as
+            Instagram / WhatsApp. Less distracting, still clearly tappable. */}
+        {isMe && (
+          <View style={styles.avatarEditBadge}>
+            <Ionicons name="camera" size={13} color="#fff" />
+          </View>
+        )}
+
+        {isLoading && <ActivityIndicator color="#fff" style={styles.loaderCenter} />}
+      </TouchableOpacity>
+    </View>
+  );
+};
 
 /**
  * The stats row: Karma / Streak / Badges.
@@ -396,7 +478,9 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
   const [savingField, setSavingField] = useState(false);
   const [bioDraft, setBioDraft] = useState('');
   const [interestsDraft, setInterestsDraft] = useState('');
-
+  const [isReporting, setIsReporting] = useState(false);
+  const [followModalType, setFollowModalType] = useState(null);
+  const [deletedPostIds, setDeletedPostIds] = useState(new Set()); // ⭐️ רשימה שחורה לפוסטים שמחקנו הרגע
   // ─── Abort-safe ref (prevents setState on unmounted component) ─────────
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -471,14 +555,27 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
   // ─── Image upload (avatar / cover) ────────
   const handleImageUpload = useCallback(async (type) => {
     if (!isMe) return;
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'We need access to your gallery to update your profile.');
-      return;
+
+    // On Web (Chrome), requestMediaLibraryPermissionsAsync always resolves to
+    // 'granted'. On native it may show the OS permission dialog. Either way
+    // we guard below.
+    if (Platform.OS !== 'web') {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'We need access to your gallery to update your profile.');
+        return;
+      }
     }
+
     try {
+      // MediaTypeOptions is deprecated in Expo SDK 50+. Use the new array
+      // syntax with a fallback so the code runs on all SDK versions.
+      const mediaTypesOption = ImagePicker.MediaTypeOptions
+        ? { mediaTypes: ImagePicker.MediaTypeOptions.Images }
+        : { mediaTypes: ['images'] };
+
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        ...mediaTypesOption,
         allowsEditing: true,
         aspect: type === 'cover1' ? [16, 9] : [1, 1],
         quality: 0.8,
@@ -535,6 +632,56 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
       Alert.alert('Call Failed', 'Could not establish a connection right now.');
     }
   }, [startCall, targetId]);
+
+  // ─── Report user ──────────────────────────
+  // Shows a native Alert with reason options, then fires POST /security/report.
+  // Only available when viewing someone else's profile (not your own).
+  const handleReport = useCallback(() => {
+    if (isMe || !targetId) return;
+    Alert.alert(
+      'Report User',
+      'Help us understand the problem:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: '🚫 Spam or scam',           onPress: () => submitUserReport('spam') },
+        { text: '🔞 Inappropriate content',   onPress: () => submitUserReport('inappropriate_content') },
+        { text: '😤 Harassment or bullying',  onPress: () => submitUserReport('harassment') },
+        { text: '🤖 Fake or impersonation',   onPress: () => submitUserReport('fake_account') },
+      ],
+    );
+  }, [isMe, targetId]);
+
+  const submitUserReport = useCallback(async (reason) => {
+    if (!targetId) return;
+    setIsReporting(true);
+    try {
+      // Use the token already in the store rather than a separate auth flow.
+      const storeToken = useAppStore.getState?.()?.token;
+      const apiBase = (Data.API_BASE_URL || 'https://api.kliqtap.com').replace(/\/$/, '');
+      const resp = await fetch(`${apiBase}/security/report`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(storeToken ? { Authorization: `Bearer ${storeToken}` } : {}),
+        },
+        body: JSON.stringify({ reportedId: String(targetId), reason }),
+      });
+      if (resp.ok) {
+        Alert.alert(
+          '✅ Report Submitted',
+          'Thank you for helping keep our community safe. We will review this account shortly.',
+        );
+      } else {
+        const msg = await resp.text().catch(() => '');
+        throw new Error(msg || `HTTP ${resp.status}`);
+      }
+    } catch (err) {
+      console.error('[Profile] Report failed:', err.message);
+      Alert.alert('Error', 'Could not submit your report. Please try again.');
+    } finally {
+      setIsReporting(false);
+    }
+  }, [targetId]);
 
   // ─── Inline About-field editing ───────────
   // Each field saves directly to the store; the displayed user updates
@@ -595,31 +742,22 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
       : [];
     const fromUser = Array.isArray(displayUser?.posts) ? displayUser.posts : [];
 
-    // ✅ FIX: כשצופים בפרופיל שלך, allPosts הוא source of truth —
-    // deletePost מעדכן אותו מיד. fromUser (displayUser.posts) לא מתעדכן
-    // אחרי מחיקה ולכן גורם לפוסטים שנמחקו להישאר בתצוגה.
-    // לפרופילים אחרים — ממשיכים למזג כרגיל.
-    const isOwnProfile = tId === String(displayUser?.id ?? '') &&
-      tId !== '' &&
-      fromFeed.length > 0;
+    // ⭐️ FIX: ממזגים תמיד את היסטוריית השרת המלאה (fromUser) עם הפיד המעודכן (fromFeed).
+    const merged = new Map();
+    [...fromUser, ...fromFeed].forEach((p) => {
+      const k = postKey(p);
+      if (k && !merged.has(k)) merged.set(k, p);
+    });
 
-    const postsToMerge = isOwnProfile
-      ? fromFeed
-      : (() => {
-          const merged = new Map();
-          [...fromUser, ...fromFeed].forEach((p) => {
-            const k = postKey(p);
-            if (k && !merged.has(k)) merged.set(k, p);
-          });
-          return Array.from(merged.values());
-        })();
-
-    return postsToMerge.sort(
+    // ⭐️ מסננים החוצה פוסטים שנמחקו הרגע (כדי שלא יחזרו לעולם עד הריפרש הבא מהשרת)
+    return Array.from(merged.values())
+      .filter(p => !deletedPostIds.has(String(p.id || p._id)))
+      .sort(
       (a, b) =>
         new Date(b?.timestamp || b?.createdAt || 0) -
         new Date(a?.timestamp || a?.createdAt || 0)
     );
-  }, [allPosts, displayUser, targetId]);
+  }, [allPosts, displayUser, targetId, deletedPostIds]);
 
   const userActivePulses = useMemo(() => {
     if (!displayUser || !pulses) return [];
@@ -770,12 +908,12 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
         {/* ── Connections summary (linked to the Activity tab data) ── */}
         <AboutCard title="Friends & Followers" theme={theme} style={{ marginTop: 25 }}>
           <View style={styles.connectionsRow}>
-            <TouchableOpacity style={styles.connectionStat} onPress={() => setProfileTab('activity')} accessibilityLabel="View followers">
+            <TouchableOpacity style={styles.connectionStat} onPress={() => setFollowModalType('followers')} accessibilityLabel="View followers">
               <Text style={[styles.statValue, { color: theme.textColor }]}>{followerCount}</Text>
               <Text style={[styles.statLabel, { color: theme.subTextColor }]}>Followers</Text>
             </TouchableOpacity>
             <View style={[styles.connectionDivider, { backgroundColor: theme.borderColor }]} />
-            <TouchableOpacity style={styles.connectionStat} onPress={() => setProfileTab('activity')} accessibilityLabel="View following">
+            <TouchableOpacity style={styles.connectionStat} onPress={() => setFollowModalType('following')} accessibilityLabel="View following">
               <Text style={[styles.statValue, { color: theme.textColor }]}>{followingCount}</Text>
               <Text style={[styles.statLabel, { color: theme.subTextColor }]}>Following</Text>
             </TouchableOpacity>
@@ -866,18 +1004,18 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
 
       <Text style={[styles.sectionTitle, { color: theme.textColor, marginTop: 10 }]}>Connections</Text>
       <View style={[styles.glassCard, { backgroundColor: theme.cardBg, borderColor: theme.borderColor, flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 15 }]}>
-        <View style={styles.statItemSmall}>
+        <TouchableOpacity style={styles.statItemSmall} activeOpacity={0.6} onPress={() => setFollowModalType('followers')}>
           <Text style={[styles.statValue, { color: theme.textColor }]}>
             {resolveCount(displayUser, 'followersCount', 'followers')}
           </Text>
           <Text style={[styles.statLabel, { color: theme.subTextColor }]}>Followers</Text>
-        </View>
-        <View style={styles.statItemSmall}>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.statItemSmall} activeOpacity={0.6} onPress={() => setFollowModalType('following')}>
           <Text style={[styles.statValue, { color: theme.textColor }]}>
             {resolveCount(displayUser, 'followingCount', 'following')}
           </Text>
           <Text style={[styles.statLabel, { color: theme.subTextColor }]}>Following</Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {Array.isArray(displayUser?.followers) && displayUser.followers.length > 0 && (
@@ -918,7 +1056,28 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
               // Navigate to the post's author, not always EditProfile
               onOpenProfile={() => setSecondSheet({ source: 'Profile', userId: author?.id })}
               onOpenComments={() => setCommentPostId(String(post.id || post._id))}
-              onDelete={isMe ? () => deletePost(String(post.id || post._id)) : undefined}
+              onDelete={isMe ? () => {
+                const pId = String(post.id || post._id);
+
+                // ⭐️ 1. מחיקה אופטימית! מעלים את הפוסט מהמסך באותה השנייה בלי לחכות לשום אישור:
+                setDeletedPostIds(prev => {
+                  const newSet = new Set(prev);
+                  newSet.add(pId);
+                  return newSet;
+                });
+                
+                setDisplayUser(prev => prev ? { 
+                  ...prev, 
+                  posts: (prev.posts || []).filter(p => String(p.id || p._id) !== pId) 
+                } : prev);
+
+                // ⭐️ 2. עכשיו שולחים בשקט לשרת. גם אם השרת מגמגם, זה כבר לא יתקע את המסך שלך:
+                try {
+                  deletePost(pId); 
+                } catch (e) {
+                  console.log('Delete task running in background...', e);
+                }
+              } : undefined}
               isDark={isDark}
             />
           );
@@ -1044,21 +1203,22 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
           <View style={styles.profileHeaderBlock}>
             <Avatar
               uri={currentAvatar}
+              name={getField(displayUser, 'name', 'fullName', 'username') || (isMe ? 'Me' : 'U')}
               isMe={isMe}
               isLoading={loadingImage === 'avatar'}
               isDark={isDark}
               onPress={() => isMe ? handleImageUpload('avatar') : setViewImage(currentAvatar)}
             />
             <View style={styles.nameBlock}>
-              <Text style={[styles.bigName, { color: isDark ? '#fff' : '#222' }]} numberOfLines={1}>
-                {getField(displayUser, 'name', 'fullName', 'displayName') ||
-                 getField(displayUser, 'username', 'handle') ||
-                 (isMe ? 'You' : 'User')}
-              </Text>
-              <Text style={[styles.handle, { color: isDark ? '#aaa' : '#888' }]}>
-                @{displayUser?.username || 'user'}
-              </Text>
-            </View>
+            <Text style={[styles.bigName, { color: isDark ? '#fff' : '#222' }]} numberOfLines={1}>
+              {getField(displayUser, 'name', 'fullName', 'displayName') ||
+               getField(displayUser, 'username', 'handle') ||
+               (isMe ? 'You' : 'User')}
+            </Text>
+            <Text style={[styles.handle, { color: isDark ? '#aaa' : '#888' }]}>
+              @{displayUser?.username || 'user'}
+            </Text>
+          </View>
           </View>
 
           {/* Action Buttons */}
@@ -1089,7 +1249,11 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
                     backgroundColor: isCurrentlyFollowing ? (isDark ? '#1C1C1E' : '#f0f0f0') : Data.brand.blue,
                     borderColor: isCurrentlyFollowing ? (isDark ? '#333' : '#ccc') : Data.brand.blue,
                   }]}
-                  onPress={() => toggleFollow(targetId)}
+                  onPress={() => {
+                    // 👇 דיווח האם המשתמש עשה עוקב או הסיר עוקב
+                    trackEvent(isCurrentlyFollowing ? 'user_unfollowed' : 'user_followed', { targetId: targetId });
+                    toggleFollow(targetId);
+                  }}
                   accessibilityLabel={isCurrentlyFollowing ? 'Unfollow user' : 'Follow user'}
                 >
                   <Text style={[styles.luxuryEditBtnText, { color: isCurrentlyFollowing ? (isDark ? '#fff' : '#333') : '#fff' }]}>
@@ -1122,6 +1286,19 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
                   accessibilityLabel="Start video call"
                 >
                   <Ionicons name="videocam" size={16} color={isDark ? '#fff' : '#333'} />
+                </TouchableOpacity>
+
+                {/* Report — flag icon, red, fires native alert with reason options */}
+                <TouchableOpacity
+                  style={[styles.iconActionBtn, { borderColor: isDark ? '#333' : '#FFE5E5', backgroundColor: isDark ? '#1C1C1E' : '#FFF5F5' }]}
+                  onPress={handleReport}
+                  disabled={isReporting}
+                  accessibilityLabel="Report this user"
+                >
+                  {isReporting
+                    ? <ActivityIndicator size="small" color={Data.brand.red || '#FF3B30'} />
+                    : <Ionicons name="flag-outline" size={16} color={Data.brand.red || '#FF3B30'} />
+                  }
                 </TouchableOpacity>
               </>
             )}
@@ -1163,6 +1340,42 @@ export default function ProfileScreen({ setSecondSheet, openChat, sheet, route }
       />
 
       <ImageViewerModal uri={viewImage} onClose={() => setViewImage(null)} />
+
+      {/* ⭐️ מודאל רשימת העוקבים/נעקבים ⭐️ */}
+      <Modal visible={!!followModalType} transparent animationType="slide" onRequestClose={() => setFollowModalType(null)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setFollowModalType(null)}>
+          <TouchableOpacity activeOpacity={1} style={{ height: '70%', backgroundColor: isDark ? '#1C1C1E' : '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20 }}>
+            <View style={{ width: 40, height: 4, backgroundColor: isDark ? '#444' : '#CCC', borderRadius: 2, alignSelf: 'center', marginBottom: 15 }} />
+            <Text style={{ color: isDark ? '#FFF' : '#111', fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 20, textTransform: 'capitalize' }}>
+              {followModalType}
+            </Text>
+            
+            <FlatList
+              data={followModalType === 'followers' ? (displayUser?.followers || []) : (displayUser?.following || [])}
+              keyExtractor={(item, index) => item?.id ? String(item.id) : String(index)}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={<Text style={{ color: '#888', textAlign: 'center', marginTop: 40, fontSize: 16 }}>No {followModalType} yet.</Text>}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18, paddingHorizontal: 10 }} 
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setFollowModalType(null); // סוגר את המודאל
+                    setSecondSheet({ source: 'Profile', userId: item.id }); // עובר לפרופיל של המשתמש שלחצנו עליו!
+                  }}
+                >
+                  <Image source={{ uri: item.avatarUrl || `https://ui-avatars.com/api/?name=${item.username || 'User'}` }} style={{ width: 48, height: 48, borderRadius: 24, marginRight: 14, backgroundColor: '#eee' }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: isDark ? '#FFF' : '#111', fontSize: 16, fontWeight: '700' }}>{item.name || item.username}</Text>
+                    <Text style={{ color: '#888', fontSize: 13, marginTop: 2 }}>@{item.username}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
     </View>
   );
 }
@@ -1185,7 +1398,7 @@ const styles = StyleSheet.create({
   // ── Header ─────────────────────────────────
   profileHeaderBlock: {
     paddingHorizontal: 20, marginTop: -40,
-    flexDirection: 'row', alignItems: 'flex-end',
+    flexDirection: 'row', alignItems: 'center', // ⭐️ מונע מהטקסט לקפוץ למעלה
   },
   avatarWrapper: {
     width: AVATAR_SIZE, height: AVATAR_SIZE,
@@ -1193,7 +1406,29 @@ const styles = StyleSheet.create({
     elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5,
   },
   mainAvatar: { width: '100%', height: '100%', borderRadius: AVATAR_SIZE / 2 },
-  nameBlock: { flex: 1, marginLeft: 15, paddingBottom: 5 },
+
+  avatarInitialCircle: {
+    alignItems: 'center', justifyContent: 'center',
+    borderRadius: AVATAR_SIZE / 2,
+  },
+  avatarInitialText: {
+    color: '#fff', fontWeight: '900',
+    fontSize: Math.round(AVATAR_SIZE * 0.4),
+  },
+
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 1, right: 1,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: Data.brand.blue,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2.5, borderColor: '#fff',
+    elevation: 4,
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 3,
+  },
+  nameBlock: {
+    flex: 1, marginLeft: 15, marginTop: 40, // ⭐️ דוחף את השם בדיוק מתחת לתמונת הנושא!
+  },
   bigName: { fontSize: 22, fontWeight: '800' },
   handle: { fontSize: 14, fontWeight: '500' },
 

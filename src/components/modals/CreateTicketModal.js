@@ -12,6 +12,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { brand } from '../../constants/data';
 import { useAppStore } from '../../store/useAppStore';
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
+
 
 // ──────────────────────────────────────────────────────────────
 // Categories — pre-prefixed in subject so support team can triage
@@ -62,6 +64,7 @@ const CreateTicketModal = ({ onClose }) => {
         setSubmitting(true);
         try {
             if (createSupportTicket) {
+                trackEvent('support_ticket_created', { category: category.id }); // 👈 מעקב אחר קטגוריית הפנייה
                 await createSupportTicket(finalSubject, trimmedMessage);
                 // Refresh the list so the new ticket appears immediately
                 if (fetchMyTickets) await fetchMyTickets();

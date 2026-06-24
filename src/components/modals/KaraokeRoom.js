@@ -22,6 +22,7 @@ import { Video } from 'expo-av';
 import { useAudioFX } from './useAudioFX';
 import { useCoSinger } from './useCoSinger';
 import * as api from '../../store/api';   // 👈 your existing API wrapper (for publishing)
+import { trackEvent } from '../../utils/analytics'; // ⭐️ FIX: was missing — DanceChallenge and DuetCompose both have this
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -385,6 +386,10 @@ export const KaraokeRoom = ({ sheet, onClose, isDark, supabase, currentUser }) =
 
       // fetchAPI attaches the auth token + handles FormData automatically.
       await api.fetchAPI(endpoint, { method: 'POST', body: form });
+      // ⭐️ FIX: was missing — DanceChallenge.js has trackEvent('dance_challenge_published'),
+      // DuetCompose.js has trackEvent('duet_published'). KaraokeRoom publishes are now
+      // tracked too, so all three creative recorders appear in analytics.
+      trackEvent('karaoke_cover_published', { target: publishTo, peakPitch });
 
       Alert.alert(
         'Posted! 🎉',

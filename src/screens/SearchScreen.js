@@ -27,6 +27,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { styles as globalStyles } from '../constants/styles';
 import * as Data from '../constants/data';
 import { useAppStore } from '../store/useAppStore';
+import { trackEvent } from '../utils/analytics'; // 👈 הייבוא החדש שלנו
 
 // ---------------------------------------------------------------------------
 // Constants — defined outside component to avoid re-creation on every render
@@ -104,33 +105,47 @@ let _fallbackCounter = 0;
 const normalizeResultItem = (rawItem) => {
   const data = rawItem?.data ?? rawItem ?? {};
 
-  const explicitType = data.type; // 'user' | 'group' | 'post' | 'event' | undefined
-  const isUser  = explicitType === 'user'  || (!explicitType && !!data.username);
-  const isGroup = explicitType === 'group' || (!explicitType && !data.username && (data.memberCount !== undefined || !!data.category));
+  const explicitType = data.type;
+  const isUser  = explicitType === 'user'  || (!explicitType && (!!data.username || !!data.email || !!data.handle));
+  const isGroup = explicitType === 'group' || (!explicitType && !data.username && !data.email && (data.memberCount !== undefined || !!data.category));
   const isPost  = explicitType === 'post';
   const isEvent = explicitType === 'event';
 
-  // Stable ID: prefer server-provided id/._id; fall back to an incrementing
-  // counter so the same normalisation call always yields the same structural key.
   const stableId =
-    data.id != null     ? String(data.id)   :
-    data._id != null    ? String(data._id)  :
+    data.id  != null ? String(data.id)  :
+    data._id != null ? String(data._id) :
     `fallback-${++_fallbackCounter}`;
 
+  // ⭐️ [FIX] Meilisearch Safe Mode may return minimal objects (id only).
+  // Cover all common field variants so results never display as "Unknown".
+  const displayName =
+    data.name        ||
+    data.displayName ||
+    data.fullName    ||
+    data.full_name   ||
+    (data.firstName ? `${data.firstName} ${data.lastName || ''}`.trim() : null) ||
+    data.username    ||
+    data.handle      ||
+    data.user_name   ||
+    (data.email ? data.email.split('@')[0] : null) ||
+    null;
+
+  const username =
+    data.username || data.handle || data.user_name ||
+    (data.email ? data.email.split('@')[0] : null) || null;
+
   return {
-    id: stableId,
-    type: isUser ? 'user' : isGroup ? 'group' : isPost ? 'post' : isEvent ? 'event' : 'unknown',
-    title:    data.name || data.username || data.title || 'Unknown',
-    subTitle: data.username
-      ? `@${data.username}`
+    id:    stableId,
+    type:  isUser ? 'user' : isGroup ? 'group' : isPost ? 'post' : isEvent ? 'event' : 'unknown',
+    title: displayName || data.title || (isGroup ? 'Unnamed Group' : 'Unknown User'),
+    subTitle: username
+      ? `@${username}`
       : (data.description || data.body || ''),
-    image: data.avatarUrl || data.imageUrl || data.image || data.avatar || null,
-    // FIX: expose only a curated navigation payload instead of the raw server
-    //      object — keeps the navigation layer decoupled from API shape.
+    image: data.avatarUrl || data.imageUrl || data.image || data.avatar || data.photo || null,
     navPayload: {
       id:          stableId,
       type:        isUser ? 'user' : isGroup ? 'group' : isPost ? 'post' : isEvent ? 'event' : 'unknown',
-      name:        data.name || data.username || data.title || '',
+      name:        displayName || data.title || '',
       description: data.description || '',
     },
     isUser,
@@ -259,6 +274,9 @@ export default function SearchScreen({ onClose, onNavigate }) {
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handleTagPress = useCallback((tagLabel) => {
+    // 👇 מעקב אחרי לחיצה על האשטאגים טרנדיים
+    trackEvent('trending_tag_clicked', { tag: tagLabel });
+
     // Strip # before searching so the API receives a clean term.
     setQuery(tagLabel.replace('#', ''));
     setActiveCategory('all');

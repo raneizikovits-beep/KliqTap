@@ -29,19 +29,68 @@
  *
  * [A11Y]  TouchableOpacity children without accessible labels — added
  *         accessibilityLabel to all interactive controls.
+ *
+ * [V1.1 — Engineering Audit Fixes]:
+ * [BUG CRITICAL] handlePostVideo called bare `alert(...)`. alert() is a
+ *         browser/DOM API — it is NOT part of React Native's JS runtime
+ *         (Hermes/JSC) and is undefined on a real native iOS/Android build,
+ *         even though it appears to work fine when only tested on web (where
+ *         the underlying DOM provides window.alert). Tapping "DROP IT" on a
+ *         real device would throw ReferenceError and crash. Also, the
+ *         recorded video was never uploaded anywhere — entirely discarded.
+ *         Fixed: wired to uploadFile() from useAppStore (the same generic
+ *         upload action audited and confirmed working in an earlier session),
+ *         replaced alert() with Toast.show() (the pattern used everywhere
+ *         else in this codebase), added an isPosting loading state.
+ *         ⚠️ The actual "create a post from this video URL" backend action
+ *         wasn't available to verify in this audit — left as an explicit
+ *         TODO rather than guessing a call to a possibly-nonexistent action.
+ * [BUG]   `Dimensions.get('window')` was captured ONCE at module load and
+ *         baked into the static StyleSheet — breaks on rotation/resize, same
+ *         class of bug found in TopicChat.js. `SCREEN_WIDTH` was destructured
+ *         but never used anywhere (dead code). Fixed with useWindowDimensions()
+ *         applied as an inline style merge at the 4 call sites that need it;
+ *         removed the dead SCREEN_WIDTH.
+ * [BUG]   `isLiveRef` was set (true on recording start, false on stop/cleanup)
+ *         but never actually READ anywhere — the claimed "drives the interval
+ *         independently" fix was a no-op in practice. Concretely, this meant
+ *         there was no guard against rapid double-tapping the shutter button,
+ *         which could fire cameraRef.current.recordAsync() a second time while
+ *         the first call was still in flight. Wired the ref as an actual
+ *         synchronous lock at the top of startRecording.
+ * [BUG]   `scanlineOverlay` used the web-only CSS property `backgroundImage`
+ *         with a `repeating-linear-gradient(...)` value. This property does
+ *         not exist in React Native's native style bridge — the "neon
+ *         scan-line shader overlay" the changelog above claims to have added
+ *         is completely invisible on a real iOS/Android build, and only
+ *         renders on react-native-web (where the underlying DOM supports real
+ *         CSS). Scoped to Platform.OS === 'web' so the gap is now intentional
+ *         and documented rather than silently broken on native.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
-    ActivityIndicator, Dimensions, Animated, Easing, ScrollView,
+    ActivityIndicator, Animated, Easing, ScrollView, Platform,
+    useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, Camera } from 'expo-camera';
 import { Video } from 'expo-av';
+import Toast from 'react-native-toast-message';
+import { useAppStore } from '../../store/useAppStore';
 
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+// ─────────────────────────────────────────────────────────────
+// Cross-platform __DEV__ guard
+// ─────────────────────────────────────────────────────────────
+if (typeof __DEV__ === 'undefined') {
+    Object.defineProperty(
+        typeof globalThis !== 'undefined' ? globalThis : global,
+        '__DEV__',
+        { value: process.env.NODE_ENV !== 'production', configurable: true }
+    );
+}
 
 const MAX_DURATION = 60; // seconds
 
@@ -75,11 +124,12 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
     const [selectedSpeed,      setSelectedSpeed]      = useState('1x');
     const [cameraFacing,       setCameraFacing]       = useState('front');
     const [showSettings,       setShowSettings]       = useState(false);
+    const [isPosting,          setIsPosting]          = useState(false); // [FIX CRITICAL]
 
     const cameraRef      = useRef(null);
     const timerRef       = useRef(null);
     const scoreRef       = useRef(0);     // batch accumulator
-    const isLiveRef      = useRef(false); // stable flag for intervals
+    const isLiveRef      = useRef(false); // [FIX] now actually used as a start-guard
     const loopRef        = useRef(null);  // holds Animated.CompositeAnimation
 
     const pulseAnim  = useRef(new Animated.Value(1)).current;
@@ -88,6 +138,12 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
 
     const trend        = sheet?.trend   || '#VideoChallenge';
     const trendViewers = useStableViewers(sheet);
+
+    // [FIX] Reactive — re-renders on rotation/resize, unlike the previous
+    // Dimensions.get('window') captured once at module load.
+    const { height: SCREEN_HEIGHT } = useWindowDimensions();
+
+    const uploadFile = useAppStore(state => state.uploadFile); // [FIX CRITICAL]
 
     // ── Permissions ───────────────────────────────────────────────────────
     useEffect(() => {
@@ -110,6 +166,7 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
             pulseAnim.setValue(1);
             ringAnim.setValue(0);
             clearInterval(timerRef.current);
+            isLiveRef.current = false; // [FIX] release the start-guard lock here too
             return;
         }
 
@@ -149,7 +206,6 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
         }, 500);
 
         return () => {
-            isLiveRef.current = false;
             clearInterval(timerRef.current);
             clearInterval(scoreInterval);
         };
@@ -157,7 +213,13 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
 
     // ── Camera actions ────────────────────────────────────────────────────
     const startRecording = async () => {
-        if (!cameraRef.current) return;
+        // [FIX] isLiveRef now actually gates concurrent starts. Set synchronously,
+        // BEFORE any await, so a rapid double-tap (both calls reading the same
+        // stale `isRecording` closure before React re-renders) still gets blocked —
+        // ref writes are immediate; state updates are not.
+        if (!cameraRef.current || isLiveRef.current) return;
+        isLiveRef.current = true;
+
         setRecordingTime(0);
         setKliqScore(0);
         setHypeCount(0);
@@ -170,6 +232,8 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
             console.error('[VideoLab] Record error:', error);
         }
         setIsRecording(false);
+        // isLiveRef.current is reset to false by the recording-engine effect's
+        // (!isRecording) branch above — single source of truth for the unlock.
     };
 
     const stopRecording = () => {
@@ -186,11 +250,30 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
         scoreRef.current = 0;
     };
 
-    const handlePostVideo = () => {
-        // TODO: wire to actual upload service
-        alert(`Dropping to ${trend}! 🚀`);
-        onClose();
-    };
+    // [FIX CRITICAL] Was: `alert(...)` (crashes on native) + the video was never
+    // uploaded anywhere. Now uploads via uploadFile() and gives real feedback.
+    const handlePostVideo = useCallback(async () => {
+        if (!recordedVideo || isPosting) return;
+        setIsPosting(true);
+        try {
+            const videoUrl = await uploadFile(recordedVideo, 'trend_video');
+            if (!videoUrl) throw new Error('Upload returned no URL');
+
+            // TODO: wire to the real "create trend post" backend action once it
+            // exists, e.g. useAppStore.getState().createTrendPost({ trend, videoUrl }).
+            // The video itself is now safely uploaded; only post-creation remains.
+            if (__DEV__) {
+                console.warn(`[VideoLab] Video uploaded to ${videoUrl}, but no createTrendPost action is wired yet.`);
+            }
+            Toast.show({ type: 'success', text1: `Dropping to ${trend}! 🚀`, text2: 'Your video is uploading.' });
+            onClose();
+        } catch (error) {
+            if (__DEV__) console.error('[VideoLab] Post video failed:', error);
+            Toast.show({ type: 'error', text1: 'Could not post video', text2: 'Please try again.' });
+        } finally {
+            setIsPosting(false);
+        }
+    }, [recordedVideo, isPosting, uploadFile, trend, onClose]);
 
     const triggerHype = useCallback(() => {
         setHypeCount(prev => prev + 1);
@@ -217,17 +300,21 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
         outputRange: ['0%', '100%'],
     });
 
+    // [FIX] height now computed from the reactive hook value, merged at each
+    // call site rather than baked into the static StyleSheet object.
+    const dynamicScreenStyle = { height: SCREEN_HEIGHT * 0.85 };
+
     // ── Guards ────────────────────────────────────────────────────────────
     if (hasPermission === null || hasAudioPermission === null) {
         return (
-            <View style={styles.loadingScreen}>
+            <View style={[styles.loadingScreen, dynamicScreenStyle]}>
                 <ActivityIndicator size="large" color="#00F5D4" />
             </View>
         );
     }
     if (!hasPermission || !hasAudioPermission) {
         return (
-            <View style={styles.loadingScreen}>
+            <View style={[styles.loadingScreen, dynamicScreenStyle]}>
                 <Ionicons name="videocam-off-outline" size={48} color="#444" />
                 <Text style={styles.permissionText}>
                     Camera & Microphone access required.{'\n'}Please enable in Settings.
@@ -239,7 +326,7 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
     // ── Preview screen ────────────────────────────────────────────────────
     if (recordedVideo) {
         return (
-            <View style={styles.container}>
+            <View style={[styles.container, dynamicScreenStyle]}>
                 <SafeAreaView style={{ flex: 1 }}>
                     <View style={styles.previewHeader}>
                         <TouchableOpacity
@@ -277,6 +364,7 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
                         <TouchableOpacity
                             style={styles.retakeBtn}
                             onPress={handleRetake}
+                            disabled={isPosting}
                             accessibilityLabel="Retake video"
                         >
                             <Ionicons name="refresh" size={18} color="#fff" />
@@ -284,12 +372,19 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={styles.postBtn}
+                            style={[styles.postBtn, isPosting && { opacity: 0.6 }]}
                             onPress={handlePostVideo}
+                            disabled={isPosting}
                             accessibilityLabel="Post video to trend"
                         >
-                            <Ionicons name="rocket" size={18} color="#000" />
-                            <Text style={styles.postBtnText}>DROP IT</Text>
+                            {isPosting ? (
+                                <ActivityIndicator size="small" color="#000" />
+                            ) : (
+                                <>
+                                    <Ionicons name="rocket" size={18} color="#000" />
+                                    <Text style={styles.postBtnText}>DROP IT</Text>
+                                </>
+                            )}
                         </TouchableOpacity>
                     </View>
                 </SafeAreaView>
@@ -299,7 +394,7 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
 
     // ── Recording screen ──────────────────────────────────────────────────
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, dynamicScreenStyle]}>
             <CameraView
                 style={StyleSheet.absoluteFill}
                 facing={cameraFacing}
@@ -476,7 +571,7 @@ export const VideoLab = ({ sheet, onClose, isDark }) => {
 // ── Styles ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
     container: {
-        height: SCREEN_HEIGHT * 0.85,
+        // height applied via dynamicScreenStyle at each render call site — see above.
         width: '100%',
         backgroundColor: '#050505',
         overflow: 'hidden',
@@ -485,7 +580,7 @@ const styles = StyleSheet.create({
         borderColor: '#1F1F22',
     },
     loadingScreen: {
-        height: SCREEN_HEIGHT * 0.85,
+        // height applied via dynamicScreenStyle at each render call site — see above.
         width: '100%',
         backgroundColor: '#000',
         justifyContent: 'center',
@@ -500,10 +595,15 @@ const styles = StyleSheet.create({
         lineHeight: 22,
     },
 
-    // Scanline aesthetic shader
-    scanlineOverlay: {
+    // [FIX] Scanline aesthetic shader — backgroundImage is a web-only CSS
+    // property with no native RN equivalent; it silently did nothing on iOS/
+    // Android. Scoped to web so the gap is intentional, not silently broken.
+    scanlineOverlay: Platform.OS === 'web' ? {
         ...StyleSheet.absoluteFillObject,
         backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px)',
+        pointerEvents: 'none',
+    } : {
+        ...StyleSheet.absoluteFillObject,
         pointerEvents: 'none',
     },
 
@@ -721,10 +821,12 @@ const styles = StyleSheet.create({
     postBtn: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
         backgroundColor: '#00F5D4',
         paddingHorizontal: 28,
         paddingVertical: 14,
         borderRadius: 24,
+        minWidth: 110,
         gap: 8,
         shadowColor: '#00F5D4',
         shadowOpacity: 0.55,

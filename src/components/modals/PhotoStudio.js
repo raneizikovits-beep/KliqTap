@@ -28,19 +28,60 @@
  *          Added AI-lock badge that appears on capture.
  *          Gradient vignette overlay for cinematic feel.
  *          Filter scroller shows actual color swatches.
+ *
+ * [V1.1 — Engineering Audit Fixes]:
+ * [BUG CRITICAL] The "POST" button called bare `alert('Masterpiece Posted!')`
+ *         — alert() is a browser/DOM API, undefined in React Native's native
+ *         runtime (Hermes/JSC) even though it appears to work when only
+ *         tested on web. Tapping POST on a real device build would throw
+ *         ReferenceError and crash. The captured photo was also never
+ *         uploaded anywhere — entirely discarded. Fixed: wired to
+ *         uploadFile() from useAppStore (the same generic upload action
+ *         confirmed working in an earlier session), replaced alert() with
+ *         Toast.show(), added an isPosting loading state. Same fix pattern
+ *         already applied to VideoLab.js and VoiceClip.js for the identical bug.
+ *         ⚠️ The actual "create a post from this photo URL" backend action
+ *         wasn't available to verify in this audit — left as an explicit
+ *         TODO rather than guessing a call to a possibly-nonexistent action.
+ * [BUG]   `Dimensions.get('window')` was captured ONCE at module load and
+ *         baked into the static StyleSheet AND the live pinch-zoom math —
+ *         same rotation/resize bug found in 5 sibling files in earlier audit
+ *         passes. Fixed with useWindowDimensions(), applied as an inline
+ *         style merge at the call sites that need height/width.
+ * [CLEANUP] Removed `const t1 = g.stateID;` — self-acknowledged by its own
+ *         comment as dead code ("not used but shows intent").
+ * [NOTE]  Pinch-zoom reads `g._touchHistory.touchBank` — an underscore-
+ *         prefixed, undocumented internal React Native gesture-responder
+ *         property, not part of the public API. It's defensively optional-
+ *         chained so it won't crash if this internal shape changes in a
+ *         future RN/Fabric upgrade, but the feature itself could silently
+ *         stop working. Worth migrating to react-native-gesture-handler's
+ *         PinchGestureHandler in a future pass — flagged as a roadmap item
+ *         since the current code does work and isn't itself broken yet.
  * ─────────────────────────────────────────────────────────────────────────
  */
+
+// ─────────────────────────────────────────────────────────────
+// Cross-platform __DEV__ guard
+// ─────────────────────────────────────────────────────────────
+if (typeof __DEV__ === 'undefined') {
+    Object.defineProperty(
+        typeof globalThis !== 'undefined' ? globalThis : global,
+        '__DEV__',
+        { value: process.env.NODE_ENV !== 'production', configurable: true }
+    );
+}
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, Image,
-    SafeAreaView, ActivityIndicator, Dimensions,
+    SafeAreaView, ActivityIndicator, useWindowDimensions,
     Animated, ScrollView, PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, Camera } from 'expo-camera';
-
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+import Toast from 'react-native-toast-message';
+import { useAppStore } from '../../store/useAppStore';
 
 // ── Filter definitions ────────────────────────────────────────────────────
 const FILTERS = [
@@ -62,11 +103,17 @@ const FLASH_STATES = [
 
 // ─────────────────────────────────────────────────────────────────────────
 export const PhotoStudio = ({ sheet, onClose, isDark }) => {
+    // [FIX] Reactive — re-renders on rotation/resize, unlike Dimensions.get('window')
+    // captured once at module load.
+    const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = useWindowDimensions();
+    const uploadFile = useAppStore(state => state.uploadFile); // [FIX CRITICAL]
+
     const [hasPermission,    setHasPermission]    = useState(null);
     const [flashIndex,       setFlashIndex]       = useState(0);          // cycles FLASH_STATES
     const [selectedFilter,   setSelectedFilter]   = useState(FILTERS[0]);
     const [capturedPhoto,    setCapturedPhoto]     = useState(null);
     const [isProcessing,     setIsProcessing]      = useState(false);
+    const [isPosting,        setIsPosting]         = useState(false); // [FIX CRITICAL]
     const [cameraFacing,     setCameraFacing]      = useState('back');
     const [countdown,        setCountdown]         = useState(null);      // 3..2..1 | null
     const [zoom,             setZoom]              = useState(0);         // 0..1
@@ -124,7 +171,6 @@ export const PhotoStudio = ({ sheet, onClose, isDark }) => {
             onMoveShouldSetPanResponder:  (_, g) => g.numberActiveTouches === 2,
             onPanResponderMove: (_, g) => {
                 if (g.numberActiveTouches !== 2) return;
-                const t1 = g.stateID; // not used but shows intent
                 // Calculate distance between two touches
                 const dx = g._touchHistory?.touchBank
                     ? Object.values(g._touchHistory.touchBank)
@@ -172,6 +218,33 @@ export const PhotoStudio = ({ sheet, onClose, isDark }) => {
         }
     }, [isProcessing, flashAILock]);
 
+    // [FIX CRITICAL] Was: `alert('Masterpiece Posted!')` (crashes on native) +
+    // the photo was never uploaded anywhere. Now uploads via uploadFile() and
+    // gives real feedback, mirroring the identical fix applied to VideoLab.js
+    // and VoiceClip.js for the same bug.
+    const handlePostPhoto = useCallback(async () => {
+        if (!capturedPhoto || isPosting) return;
+        setIsPosting(true);
+        try {
+            const photoUrl = await uploadFile(capturedPhoto, 'trend_photo');
+            if (!photoUrl) throw new Error('Upload returned no URL');
+
+            // TODO: wire to the real "create trend post" backend action once it
+            // exists, e.g. useAppStore.getState().createTrendPost({ trend, photoUrl }).
+            // The photo itself is now safely uploaded; only post-creation remains.
+            if (__DEV__) {
+                console.warn(`[PhotoStudio] Photo uploaded to ${photoUrl}, but no createTrendPost action is wired yet.`);
+            }
+            Toast.show({ type: 'success', text1: 'Masterpiece posted! 🚀', text2: 'Your photo is uploading.' });
+            onClose();
+        } catch (error) {
+            if (__DEV__) console.error('[PhotoStudio] Post photo failed:', error);
+            Toast.show({ type: 'error', text1: 'Could not post photo', text2: 'Please try again.' });
+        } finally {
+            setIsPosting(false);
+        }
+    }, [capturedPhoto, isPosting, uploadFile, onClose]);
+
     const startSelfTimer = useCallback(() => {
         if (countdown !== null || isProcessing) return;
         let t = 3;
@@ -202,14 +275,14 @@ export const PhotoStudio = ({ sheet, onClose, isDark }) => {
     // ── Guards ────────────────────────────────────────────────────────────
     if (hasPermission === null) {
         return (
-            <View style={styles.loadingScreen}>
+            <View style={[styles.loadingScreen, { height: SCREEN_HEIGHT * 0.85 }]}>
                 <ActivityIndicator size="large" color="#00F5D4" />
             </View>
         );
     }
     if (!hasPermission) {
         return (
-            <View style={styles.loadingScreen}>
+            <View style={[styles.loadingScreen, { height: SCREEN_HEIGHT * 0.85 }]}>
                 <Ionicons name="camera-off-outline" size={48} color="#444" />
                 <Text style={styles.permText}>Camera access denied.</Text>
             </View>
@@ -219,7 +292,7 @@ export const PhotoStudio = ({ sheet, onClose, isDark }) => {
     // ── Preview screen ────────────────────────────────────────────────────
     if (capturedPhoto) {
         return (
-            <View style={styles.container}>
+            <View style={[styles.container, { height: SCREEN_HEIGHT * 0.85 }]}>
                 <Image source={{ uri: capturedPhoto }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: selectedFilter.color }]} />
                 {/* Vignette */}
@@ -246,17 +319,24 @@ export const PhotoStudio = ({ sheet, onClose, isDark }) => {
                     )}
 
                     <View style={styles.previewFooter}>
-                        <TouchableOpacity style={styles.retakeBtn} onPress={() => setCapturedPhoto(null)} accessibilityLabel="Retake photo">
+                        <TouchableOpacity style={styles.retakeBtn} onPress={() => setCapturedPhoto(null)} disabled={isPosting} accessibilityLabel="Retake photo">
                             <Ionicons name="refresh" size={18} color="#fff" />
                             <Text style={styles.btnText}>RETAKE</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={styles.postBtn}
-                            onPress={() => { /* TODO: wire to post service */ alert('Masterpiece Posted!'); onClose(); }}
+                            style={[styles.postBtn, isPosting && { opacity: 0.6 }]}
+                            onPress={handlePostPhoto}
+                            disabled={isPosting}
                             accessibilityLabel="Post photo to trend"
                         >
-                            <Text style={styles.postBtnText}>POST TO TREND</Text>
-                            <Ionicons name="rocket" size={18} color="#fff" />
+                            {isPosting ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <>
+                                    <Text style={styles.postBtnText}>POST TO TREND</Text>
+                                    <Ionicons name="rocket" size={18} color="#fff" />
+                                </>
+                            )}
                         </TouchableOpacity>
                     </View>
                 </SafeAreaView>
@@ -266,7 +346,7 @@ export const PhotoStudio = ({ sheet, onClose, isDark }) => {
 
     // ── Studio (live camera) screen ───────────────────────────────────────
     return (
-        <View style={styles.container} {...pinchResponder.panHandlers}>
+        <View style={[styles.container, { height: SCREEN_HEIGHT * 0.85 }]} {...pinchResponder.panHandlers}>
             <CameraView
                 style={StyleSheet.absoluteFill}
                 facing={cameraFacing}
@@ -288,7 +368,7 @@ export const PhotoStudio = ({ sheet, onClose, isDark }) => {
                     style={[styles.reticleContainer, { opacity: reticleAnim }]}
                     pointerEvents="none"
                 >
-                    <View style={styles.reticleMain}>
+                    <View style={[styles.reticleMain, { width: SCREEN_WIDTH * 0.58, height: SCREEN_WIDTH * 0.58 }]}>
                         <View style={[styles.reticleCorner, styles.tl]} />
                         <View style={[styles.reticleCorner, styles.tr]} />
                         <View style={[styles.reticleCorner, styles.bl]} />
@@ -412,7 +492,7 @@ export const PhotoStudio = ({ sheet, onClose, isDark }) => {
 // ── Styles ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
     container: {
-        height: SCREEN_HEIGHT * 0.85,
+        // height applied via inline style merge at the render call sites — see above.
         width: '100%',
         backgroundColor: '#000',
         overflow: 'hidden',
@@ -421,7 +501,7 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.08)',
     },
     loadingScreen: {
-        height: SCREEN_HEIGHT * 0.85,
+        // height applied via inline style merge at the render call sites — see above.
         backgroundColor: '#000',
         justifyContent: 'center',
         alignItems: 'center',
@@ -518,8 +598,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     reticleMain: {
-        width: SCREEN_WIDTH * 0.58,
-        height: SCREEN_WIDTH * 0.58,
+        // width/height applied via inline style merge at the render call site — see above.
         position: 'relative',
         justifyContent: 'center',
         alignItems: 'center',

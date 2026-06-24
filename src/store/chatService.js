@@ -1,5 +1,5 @@
 // client/src/store/chatService.js
-// ✅ V10.0 PRODUCTION — Auto-rejoin rooms on reconnect
+// ✅ V10.1 PRODUCTION — Auto-rejoin rooms on reconnect + ATTACHMENT SUPPORT
 //
 // ════════════════════════════════════════════════════════════════
 // ROOT CAUSE FIX (v10):
@@ -89,7 +89,7 @@ class ChatService {
             auth:                 { token, userId },
             extraHeaders:         { Authorization: `Bearer ${token}` },
             query:                { userId, token },
-            transports:           ['websocket'], // 👈 התיקון שלנו
+            transports:           ['websocket'], 
             autoConnect:          true,
             forceNew:             true,
             reconnection:         true,
@@ -175,10 +175,14 @@ class ChatService {
         this.socket.on('notification', () => s?.().fetchNotifications?.());
 
         // ── Chat messages ─────────────────────────────────────
-        this.socket.on('newMessage',     (msg)  => s?.().addMessageToHistory?.(msg));
-        this.socket.on('chatHistory',    (data) => s?.().setChatHistory?.(String(data.chatId), data.messages));
-        this.socket.on('messageEdited',  (data) => s?.().editChatMessage?.(String(data.id), data.text));
-        this.socket.on('messageDeleted', (data) => s?.().deleteChatMessage?.(String(data.id), String(data.chatId)));
+        this.socket.on('newMessage',  (msg)  => s?.().addMessageToHistory?.(msg));
+        this.socket.on('chatHistory', (data) => s?.().setChatHistory?.(String(data.chatId), data.messages));
+        // NOTE: 'messageEdited' and 'messageDeleted' are intentionally NOT handled here.
+        // chatSlice.connectSocket() owns these two events: it calls socket.off() to remove
+        // any handlers registered here, then adds its own correct handlers that use the
+        // per-message chatId from the event payload (not currentChatId from state).
+        // Handling them here would also re-emit to the server (via editChatMessageOnServer /
+        // deleteChatMessageOnServer), creating an infinite loop.
 
         // ── WebRTC signaling ──────────────────────────────────
         this.socket.on('user-joined', async (data) => {
@@ -297,9 +301,17 @@ class ChatService {
         this.emit('loadHistory', String(chatId));
     }
 
-    // V9.2: senderId intentionally NOT forwarded — server reads from JWT.
-    sendChatMessage(chatId, _senderId, text, clientId) {
-        this.emit('sendMessage', { chatId: String(chatId), text, clientId });
+    // ⭐️ V10.1: Added attachmentUrl to payload. Server reads from JWT for senderId.
+    sendChatMessage(chatId, _senderId, text, clientId, replyToId = null, attachmentUrl = null) {
+        const payload = { chatId: String(chatId), text, clientId };
+        if (replyToId) payload.replyToId = String(replyToId);
+        if (attachmentUrl) payload.attachmentUrl = attachmentUrl; // 👈 צירוף הקובץ להודעה
+        this.emit('sendMessage', payload);
+    }
+
+    // פונקציה חדשה שמודיעה לשרת שקראת את ההודעות
+    markChatAsRead(chatId) {
+        this.emit('markChatAsRead', { chatId: String(chatId) });
     }
 
     editChatMessageOnServer(messageId, newText) {
@@ -322,6 +334,12 @@ class ChatService {
         const id = String(roomId);
         this.activeVoiceRooms.delete(id);
         this.emit('leave-voice-room', { roomId: id });
+    }
+
+    // ⭐️ [FIX] Notify the room that this user is ending the call.
+    // Server relays 'callEnded' to all other participants so their UI dismisses.
+    sendCallEnded(roomId) {
+        this.emit('endCall', { roomId: String(roomId) });
     }
 
     sendSignalOffer(targetUserId, signal, roomId) {

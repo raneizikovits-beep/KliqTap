@@ -1,10 +1,9 @@
 // client/src/store/chatSlice.js
-// ✅ V11.3 PRODUCTION — SINGLE FILE WEB & NATIVE SAFE 
-// פתרון מוחלט לקריסות ב-Android וב-Web (Chrome) בקובץ אחד.
+// ✅ V11.6 PRODUCTION — ULTIMATE: Avatar Flicker Fix + Infinite Scroll + Reply Persistence + ATTACHMENT SUPPORT
 
 import { Platform } from 'react-native';
 import { chatService } from './chatService';
-import { fetchAPI } from './api';
+import { fetchAPI, API_BASE_URL } from './api'; // ⭐️ הוספנו את API_BASE_URL
 
 // ─────────────────────────────────────────────────────────────
 // Cross-platform WebRTC bindings (Smart Conditional Loading)
@@ -66,7 +65,7 @@ const trimHistory = (messages) =>
 const normalizeSender = (rawSender) => {
     if (!rawSender) return { id: null, name: 'Unknown' };
     if (typeof rawSender === 'string') {
-        return { id: rawSender, name: 'User', username: 'user', avatar: null };
+        return { id: rawSender, name: 'User', username: 'user', avatar: null, avatarUrl: null };
     }
     const id = rawSender._id || rawSender.id;
     if (id) {
@@ -74,7 +73,9 @@ const normalizeSender = (rawSender) => {
             id: String(id),
             name: rawSender.name || rawSender.username || 'Unknown',
             username: rawSender.username,
-            avatar: rawSender.avatarUrl || rawSender.avatar,
+            // ⭐️ FIX: Always populate BOTH avatar and avatarUrl so UI never misses the image
+            avatar: rawSender.avatarUrl || rawSender.avatar || null,
+            avatarUrl: rawSender.avatarUrl || rawSender.avatar || null,
         };
     }
     return { id: null, ...rawSender };
@@ -303,7 +304,12 @@ export const createChatSlice = (set, get) => ({
         const targetId = String(targetUser.id || targetUser._id);
         try {
             if (get().userCache) {
-                set(state => ({ userCache: { ...state.userCache, [targetId]: targetUser } }));
+                set(state => ({ 
+                    userCache: { 
+                        ...state.userCache, 
+                        [targetId]: { ...(state.userCache[targetId] || {}), ...targetUser }
+                    } 
+                }));
             }
 
             const chatData = await fetchAPI('/chats/private', {
@@ -352,6 +358,8 @@ export const createChatSlice = (set, get) => ({
             const userCacheUpdates = {};
             const metadataUpdates = {};
             const myId = get().user?.id ? String(get().user.id) : null;
+            const currentMeta = get().chatMetadata;
+            const currentCache = get().userCache || {};
 
             conversations.forEach(chat => {
                 const safeChatId = String(chat.id || chat._id);
@@ -366,6 +374,8 @@ export const createChatSlice = (set, get) => ({
                             time: chat.lastMessage.time || chat.lastMessage.createdAt,
                             isRead: chat.lastMessage.isRead ?? true,
                             sender: normalizeSender(chat.lastMessage.sender || chat.lastMessage.user),
+                            // ⭐️ הוספת תמיכה בתמונות מהשרת
+                            attachmentUrl: chat.lastMessage.attachmentUrl || chat.lastMessage.imageUrl || chat.lastMessage.image || chat.lastMessage.fileUrl || null,
                         }];
                     }
                 }
@@ -373,11 +383,15 @@ export const createChatSlice = (set, get) => ({
                 const safeOtherUserId = chat.otherUserId ? String(chat.otherUserId) : null;
 
                 if (chat.isDM && safeOtherUserId) {
+                    // Merge with existing userCache to avoid wiping avatars
+                    const existingUser = currentCache[safeOtherUserId] || {};
                     userCacheUpdates[safeOtherUserId] = {
+                        ...existingUser,
                         id: safeOtherUserId,
                         name: chat.name,
                         username: chat.username || chat.name,
-                        avatarUrl: chat.image,
+                        avatarUrl: chat.image || existingUser.avatarUrl || existingUser.avatar || null,
+                        avatar: chat.image || existingUser.avatar || existingUser.avatarUrl || null,
                     };
                 }
 
@@ -392,13 +406,21 @@ export const createChatSlice = (set, get) => ({
                     }
                 }
 
+                const localMeta          = currentMeta?.[safeChatId];
+                const localLastMsgId     = String(localMeta?.lastMessage?._id || localMeta?.lastMessage?.id || '');
+                const serverLastMsgId    = String(chat.lastMessage?._id || chat.lastMessage?.id || '');
+                const noNewMessageSinceRead = localLastMsgId === serverLastMsgId;
+                const resolvedUnread = (localMeta?.unreadCount === 0 && noNewMessageSinceRead)
+                    ? 0
+                    : (chat.unreadCount || 0);
+
                 metadataUpdates[safeChatId] = {
                     isDM: chat.isDM === true,
                     otherUserId: dmUserId,
                     fallbackName: dmUserName,
                     name: dmUserName,
                     image: chat.image,
-                    unreadCount: chat.unreadCount || 0,
+                    unreadCount: resolvedUnread,
                     lastMessage: chat.lastMessage
                         ? { ...chat.lastMessage, text: chat.lastMessage.body || chat.lastMessage.text }
                         : null,
@@ -417,6 +439,11 @@ export const createChatSlice = (set, get) => ({
 
     openChat: (chatId) => {
         const safeChatId = String(chatId);
+        const existingHistory = get().chatHistory[safeChatId];
+        const lastKnownMsg = existingHistory?.length > 0
+            ? existingHistory[existingHistory.length - 1]
+            : null;
+
         set(state => ({
             currentChatId: safeChatId,
             chatHistory: {
@@ -426,25 +453,35 @@ export const createChatSlice = (set, get) => ({
             chatMetadata: {
                 ...state.chatMetadata,
                 ...(state.chatMetadata[safeChatId]
-                    ? { [safeChatId]: { ...state.chatMetadata[safeChatId], unreadCount: 0 } }
+                    ? { [safeChatId]: {
+                        ...state.chatMetadata[safeChatId],
+                        unreadCount: 0,
+                        lastMessage: lastKnownMsg || state.chatMetadata[safeChatId].lastMessage,
+                    } }
                     : {}),
             },
         }));
         chatService.joinChat(safeChatId);
         chatService.loadHistory(safeChatId);
+        fetchAPI(`/chats/${safeChatId}/read`, { method: 'POST' }).catch(() => {});
     },
 
     closeChat: () => set({ currentChatId: null }),
 
     // ─────────────────────────────────────────────────────────
-    // CHAT MESSAGES 
+    // CHAT MESSAGES (⭐️ WITH UPLOAD SUPPORT ⭐️)
     // ─────────────────────────────────────────────────────────
-    sendChatMessage: (text) => {
-        const { currentChatId, user } = get();
-        if (!currentChatId || !text || !user) return;
+    sendChatMessage: async (text, options = {}) => {
+        const { currentChatId, user, token } = get();
+        const safeText = text || '';
+        const attachmentUri = options?.attachmentUri || null;
+        
+        if (!currentChatId || (!safeText.trim() && !attachmentUri) || !user) return;
 
-        const clientId = generateClientId();
+        const clientId  = generateClientId();
+        const replyToId = options?.replyToId || null; 
 
+        // 1. יצירת ההודעה המקומית המזויפת להצגה מיידית (Optimistic UI)
         const tempMessage = {
             id: clientId,
             clientId,
@@ -454,15 +491,71 @@ export const createChatSlice = (set, get) => ({
                 username: user.username,
                 avatar: user.avatarUrl,
             },
-            text, body: text, type: 'text',
+            text: safeText, 
+            body: safeText, 
+            type: 'text',
             time: new Date().toISOString(),
             timestamp: new Date().toISOString(),
             isRead: true,
             pending: true,
+            attachmentUrl: attachmentUri, // ⭐️ מראה את התמונה על המסך מיד!
+            ...(replyToId ? { replyToId } : {}),
         };
 
         get().addMessageToHistory(tempMessage);
-        chatService.sendChatMessage(currentChatId, String(user.id), text, clientId);
+
+        let finalAttachmentUrl = null;
+
+        // 2. העלאת הקובץ לשרת אם צורף קובץ
+        if (attachmentUri) {
+            try {
+                const formData = new FormData();
+                const filename = attachmentUri.split('/').pop() || 'upload.jpg';
+                
+                // זיהוי סוג קובץ בסיסי לפי סיומת
+                let type = 'image/jpeg';
+                if (filename.endsWith('.mp4')) type = 'video/mp4';
+                else if (filename.endsWith('.png')) type = 'image/png';
+                else if (filename.endsWith('.mov')) type = 'video/quicktime';
+                else if (filename.endsWith('.gif')) type = 'image/gif';
+
+                formData.append('file', {
+                    uri: attachmentUri,
+                    name: filename,
+                    type,
+                });
+
+                const response = await fetch(`${API_BASE_URL}/upload/single`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Upload server rejected the file');
+                }
+
+                const data = await response.json();
+                finalAttachmentUrl = data.url || data.fileUrl || data.imageUrl || data.path || data.attachmentUrl;
+
+            } catch (error) {
+                if (__DEV__) console.warn('[Chat] Failed to upload attachment:', error);
+                get().deleteChatMessage(clientId);
+                return;
+            }
+        }
+
+        // 3. שליחה סופית דרך ה-Socket
+        chatService.sendChatMessage(
+            currentChatId, 
+            String(user.id), 
+            safeText, 
+            clientId, 
+            replyToId, 
+            finalAttachmentUrl
+        );
     },
 
     editChatMessage: (messageId, newText) => {
@@ -506,8 +599,17 @@ export const createChatSlice = (set, get) => ({
     addMessageToHistory: (rawMessage) => {
         const senderObject = normalizeSender(rawMessage.sender || rawMessage.user);
 
+        // Safe merge so we don't wipe existing profile data
         if (senderObject?.id && get().userCache) {
-            set(state => ({ userCache: { ...state.userCache, [senderObject.id]: senderObject } }));
+            set(state => {
+                const existing = state.userCache[senderObject.id] || {};
+                return {
+                    userCache: { 
+                        ...state.userCache, 
+                        [senderObject.id]: { ...existing, ...senderObject } 
+                    }
+                };
+            });
         }
 
         const messageId = String(rawMessage._id || rawMessage.id || '');
@@ -523,6 +625,7 @@ export const createChatSlice = (set, get) => ({
             clientId,
             chatId: targetChatId,
             sender: senderObject,
+            replyToId: rawMessage.replyToId || null, 
             text: rawMessage.body || rawMessage.text || '',
             body: rawMessage.body || rawMessage.text || '',
             type: rawMessage.type || 'text',
@@ -533,7 +636,21 @@ export const createChatSlice = (set, get) => ({
                 return Math.abs(new Date(rawMessage.updatedAt) - new Date(rawMessage.createdAt)) > 1000;
             })(),
             pending: rawMessage.pending || false,
+            // ⭐️ FIX: לוודא שתמונות עולות נכון גם כשההודעה מגיעה מהרשת
+            attachmentUrl: rawMessage.attachmentUrl || rawMessage.imageUrl || rawMessage.image || rawMessage.fileUrl || null,
         };
+
+        if (rawMessage.replyTo) {
+            message.replyTo = {
+                id: String(rawMessage.replyTo.id || rawMessage.replyTo._id),
+                text: rawMessage.replyTo.body || rawMessage.replyTo.text,
+                body: rawMessage.replyTo.body || rawMessage.replyTo.text,
+                sender: normalizeSender(rawMessage.replyTo.sender)
+            };
+        } else if (message.replyToId) {
+            const existingHistory = get().chatHistory[targetChatId] || [];
+            message.replyTo = existingHistory.find(m => String(m.id) === String(message.replyToId)) || null;
+        }
 
         set(state => {
             const currentMessages = state.chatHistory[targetChatId] || [];
@@ -607,42 +724,74 @@ export const createChatSlice = (set, get) => ({
         const safeChatId = String(chatId);
         if (!Array.isArray(rawMessages)) return;
 
-        const seen = new Set();
-        const normalizedMessages = rawMessages
-            .map(raw => {
-                const sender = normalizeSender(raw.sender || raw.user);
-                if (sender?.id && get().userCache) {
-                    const currentCache = get().userCache;
-                    if (!currentCache[sender.id]) {
-                        set(state => ({ userCache: { ...state.userCache, [sender.id]: sender } }));
-                    }
-                }
-                return {
-                    id: String(raw._id || raw.id),
-                    sender,
-                    text: raw.body || raw.text || '',
-                    body: raw.body || raw.text || '',
-                    type: raw.type || 'text',
-                    time: raw.time || raw.createdAt || new Date().toISOString(),
-                    isRead: raw.isRead ?? true,
-                    edited: raw.edited || raw.isEdited || (() => {
-                        if (!raw.updatedAt || !raw.createdAt) return false;
-                        return Math.abs(new Date(raw.updatedAt) - new Date(raw.createdAt)) > 1000;
-                    })(),
+        const newUserCacheEntries = {};
+
+        const normalizedMessages = rawMessages.map(raw => {
+            const sender = normalizeSender(raw.sender || raw.user);
+            if (sender?.id) {
+                newUserCacheEntries[sender.id] = sender;
+            }
+
+            let replyToObj = null;
+            if (raw.replyTo) {
+                replyToObj = {
+                    id: String(raw.replyTo.id || raw.replyTo._id),
+                    text: raw.replyTo.body || raw.replyTo.text,
+                    body: raw.replyTo.body || raw.replyTo.text,
+                    sender: normalizeSender(raw.replyTo.sender)
                 };
-            })
-            .filter(msg => {
-                if (seen.has(msg.id)) return false;
-                seen.add(msg.id);
+            }
+
+            return {
+                id: String(raw._id || raw.id),
+                sender,
+                replyToId: raw.replyToId || replyToObj?.id || null,
+                replyTo: replyToObj, 
+                text: raw.body || raw.text || '',
+                body: raw.body || raw.text || '',
+                type: raw.type || 'text',
+                time: raw.time || raw.createdAt || new Date().toISOString(),
+                isRead: raw.isRead ?? true,
+                edited: raw.edited || raw.isEdited || (() => {
+                    if (!raw.updatedAt || !raw.createdAt) return false;
+                    return Math.abs(new Date(raw.updatedAt) - new Date(raw.createdAt)) > 1000;
+                })(),
+                // ⭐️ FIX: הוספת תמיכה בתמונות מההיסטוריה
+                attachmentUrl: raw.attachmentUrl || raw.imageUrl || raw.image || raw.fileUrl || null,
+            };
+        });
+
+        set(state => {
+            const mergedUserCache = { ...state.userCache };
+            for (const uid of Object.keys(newUserCacheEntries)) {
+                mergedUserCache[uid] = {
+                    ...(mergedUserCache[uid] || {}),
+                    ...newUserCacheEntries[uid],
+                };
+            }
+
+            const existingHistory = state.chatHistory[safeChatId] || [];
+            const combined = [...normalizedMessages, ...existingHistory];
+            
+            const seen = new Set();
+            const deduplicated = combined.filter(m => {
+                if (seen.has(m.id)) return false;
+                seen.add(m.id);
                 return true;
             });
 
-        set(state => ({
-            chatHistory: {
-                ...state.chatHistory,
-                [safeChatId]: trimHistory(normalizedMessages),
-            },
-        }));
+            deduplicated.sort((a, b) => new Date(a.time) - new Date(b.time));
+
+            return {
+                chatHistory: {
+                    ...state.chatHistory,
+                    [safeChatId]: deduplicated.length > 500 ? deduplicated.slice(-500) : deduplicated,
+                },
+                ...(Object.keys(newUserCacheEntries).length > 0 && {
+                    userCache: mergedUserCache,
+                }),
+            };
+        });
     },
 
     clearChatHistory: (chatId) => set(state => ({
@@ -841,10 +990,6 @@ export const createChatSlice = (set, get) => ({
             return;
         }
 
-        // ✅ FIX: Join the socket room BEFORE sending the offer.
-        // Previously the offer was sent before joinVoiceRoom, so the caller
-        // wasn't in the room yet when the answer/ICE arrived — causing the
-        // PeerConnection to close after ~5s with no response.
         if (typeof chatService.joinVoiceRoom === 'function') {
             try { chatService.joinVoiceRoom(String(roomId)); } catch (e) {}
         }
@@ -886,8 +1031,11 @@ export const createChatSlice = (set, get) => ({
         });
         get().stopLocalStream();
 
-        if (roomId && typeof chatService.leaveVoiceRoom === 'function') {
-            try { chatService.leaveVoiceRoom(String(roomId)); } catch (e) {}
+        if (roomId) {
+            try { chatService.sendCallEnded(String(roomId)); } catch (e) {}
+            if (typeof chatService.leaveVoiceRoom === 'function') {
+                try { chatService.leaveVoiceRoom(String(roomId)); } catch (e) {}
+            }
         }
 
         set(state => ({
@@ -987,29 +1135,19 @@ export const createChatSlice = (set, get) => ({
                     delete newStreams[safePartnerId];
                     return { peerStreams: newStreams };
                 });
+                setTimeout(() => {
+                    const s = get();
+                    if (s.currentCallId && Object.keys(s.peerStreams || {}).length === 0 && s.callStatus === 'connected') {
+                        if (__DEV__) console.log('[Call] PC closed with no streams — ending call (fallback).');
+                        s.endCall(s.currentCallId);
+                    }
+                }, 2500);
             }
         };
 
         set(state => ({
             peerConnections: { ...state.peerConnections, [safePartnerId]: pc },
         }));
-
-        const queued = get().pendingIceCandidates[safePartnerId];
-        if (queued && queued.length > 0) {
-            setTimeout(async () => {
-                const currentPc = get().peerConnections[safePartnerId];
-                if (!currentPc) return;
-                if (!currentPc.remoteDescription) return;
-                for (const c of queued) {
-                    try { await currentPc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
-                }
-                set(state => {
-                    const p = { ...state.pendingIceCandidates };
-                    delete p[safePartnerId];
-                    return { pendingIceCandidates: p };
-                });
-            }, 0);
-        }
 
         return pc;
     },
@@ -1247,9 +1385,11 @@ export const createChatSlice = (set, get) => ({
 
     removePeerConnection: (userId) => {
         const sid = String(userId);
+        const wasInCall = !!get().currentCallId;
+
         set(state => {
-            const newPcs = { ...state.peerConnections };
-            const newStreams = { ...state.peerStreams };
+            const newPcs     = { ...state.peerConnections };
+            const newStreams  = { ...state.peerStreams };
             const newSenders = { ...state.videoSenders };
             try { newPcs[sid]?.close(); } catch (e) {}
             delete newPcs[sid];
@@ -1257,10 +1397,20 @@ export const createChatSlice = (set, get) => ({
             delete newSenders[sid];
             return {
                 peerConnections: newPcs,
-                peerStreams: newStreams,
-                videoSenders: newSenders,
+                peerStreams:      newStreams,
+                videoSenders:     newSenders,
             };
         });
+
+        if (wasInCall) {
+            setTimeout(() => {
+                const s = get();
+                if (s.currentCallId && Object.keys(s.peerConnections || {}).length === 0) {
+                    if (__DEV__) console.log('[Call] Last peer left — ending call.');
+                    s.endCall(s.currentCallId);
+                }
+            }, 2500);
+        }
     },
 
     // ═════════════════════════════════════════════════════════

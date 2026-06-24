@@ -1,13 +1,5 @@
 // client/src/components/PostCard.js
-// ⭐️ KLIQMIND V7.0 — Fixed BUG-B (useShallow), BUG-D (stale state), BUG-I (callback consistency), SEC-1 ⭐️
-//
-// CHANGES from V6.4:
-//   [FIX-B]  Use atomic selectors (or useShallow) instead of object-returning selector.
-//            Prevents whole-FlatList re-renders on unrelated state changes.
-//   [FIX-D]  editText/editImage no longer captured at first mount; initialized in handleOpenEdit.
-//   [FIX-I]  All handlers wrapped in useCallback for stable identity (memo-friendly).
-//   [SEC-1]  clipboard fallback for browsers without navigator.clipboard.
-//   [UX]     Optimistic like with rollback on toggleLike failure.
+// ⭐️ KLIQMIND V8.8 — Fully Merged V7.0 with Persistent Likes, Native Emoji Keyboard, Share List Modal & Accessible Counters ⭐️
 
 import React, { useState, useRef, memo, useCallback, useEffect } from 'react';
 import {
@@ -22,28 +14,55 @@ import { useShallow } from 'zustand/react/shallow';
 import { brand, imageFor } from '../constants/data';
 import { styles as globalStyles } from '../constants/styles';
 import { useAppStore } from '../store/useAppStore';
+import { trackEvent } from '../utils/analytics';
+
+// ⭐️ הייבוא של החלון החדש מהתיקייה שיצרת!
+import PostSharesModal from './modals/PostSharesModal';
+
+// ─── Trust & Safety: Report Helper ─────────────────────────────────────────
+async function _submitSecurityReport(reportedId, reason, token) {
+  if (!reportedId || !token) return false;
+  try {
+    const resp = await fetch('https://api.kliqtap.com/security/report', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ reportedId: String(reportedId), reason }),
+    });
+    return resp.ok;
+  } catch { return false; }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const { width } = Dimensions.get('window');
 
 const VIBES = [
-  { id: 'electric', icon: 'flash', color: '#FFD700', label: 'Electric' },
-  { id: 'fire', icon: 'flame', color: '#FF4500', label: 'Fire' },
-  { id: 'gem', icon: 'diamond', color: '#00FFFF', label: 'Rare' },
-  { id: 'rocket', icon: 'rocket', color: '#FF69B4', label: 'Wild' },
-  { id: 'galaxy', icon: 'planet', color: '#9370DB', label: 'Magic' },
-  { id: 'clover', icon: 'leaf', color: '#32CD32', label: 'Luck' },
-  { id: 'skull', icon: 'skull', color: '#555', label: 'Dead' },
-  { id: 'drop', icon: 'water', color: '#1E90FF', label: 'Deep' },
-  { id: 'vortex', icon: 'aperture', color: '#8A2BE2', label: 'Trippy' },
-  { id: 'moon', icon: 'moon', color: '#C0C0C0', label: 'Night' },
-  { id: 'cube', icon: 'cube', color: '#4682B4', label: 'Solid' },
-  { id: 'alien', icon: 'happy', color: '#7FFF00', label: 'Weird' },
-  { id: 'sun', icon: 'sunny', color: '#FFA500', label: 'Warm' },
-  { id: 'rose', icon: 'rose', color: '#DC143C', label: 'Lovely' },
-  { id: 'music', icon: 'musical-notes', color: '#9400D3', label: 'Vibe' },
-  { id: 'trophy', icon: 'trophy', color: '#DAA520', label: 'Win' },
-  { id: 'idea', icon: 'bulb', color: '#FFFF00', label: 'Smart' },
-  { id: 'anchor', icon: 'boat', color: '#000080', label: 'Anchor' },
+  { id: 'heart', icon: '❤️', label: 'Love' },
+  { id: 'thumbsup', icon: '👍', label: 'Like' },
+  { id: 'fire', icon: '🔥', label: 'Fire' },
+  { id: 'laugh', icon: '😂', label: 'Haha' },
+  { id: 'wow', icon: '😮', label: 'Wow' },
+  { id: 'sad', icon: '😢', label: 'Sad' },
+  { id: 'party', icon: '🥳', label: 'Party' },
+  { id: 'clover', icon: '🍀', label: 'Luck' },
+  { id: 'rocket', icon: '🚀', label: 'Rocket' },
+  { id: 'star', icon: '⭐', label: 'Star' },
+  { id: 'sunglasses', icon: '😎', label: 'Cool' },
+  { id: 'muscle', icon: '💪', label: 'Strong' },
+  { id: 'thinking', icon: '🤔', label: 'Think' },
+  { id: '100', icon: '💯', label: '100' },
+  { id: 'wave', icon: '👋', label: 'Wave' },
+  { id: 'praying', icon: '🙏', label: 'Thanks' },
+  { id: 'loveeyes', icon: '😍', label: 'Lovely' },
+  { id: 'music', icon: '🎵', label: 'Music' },
+  { id: 'trophy', icon: '🏆', label: 'Win' },
+  { id: 'bulb', icon: '💡', label: 'Idea' },
+  { id: 'coffee', icon: '☕', label: 'Coffee' },
+  { id: 'sunset', icon: '🌅', label: 'Sunset' },
+  { id: 'ocean', icon: '🌊', label: 'Ocean' },
+  { id: 'peace', icon: '✌️', label: 'Peace' },
 ];
 
 const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.webm'];
@@ -53,25 +72,41 @@ const isVideoUri = (uri) => {
   return VIDEO_EXTENSIONS.some((ext) => lower.endsWith(ext));
 };
 
-const PostActionIcon = memo(({ iconName, count, color, onPress, onLongPress, size = 26, style, isDark }) => (
-  <TouchableOpacity
-    onPress={onPress}
-    onLongPress={onLongPress}
-    delayLongPress={250}
-    style={[localStyles.actionIcon, style]}
-    activeOpacity={0.6}
-    accessibilityRole="button"
-  >
-    <Ionicons name={iconName} size={size} color={color || (isDark ? '#ddd' : brand.ink)} />
-    {count > 0 && <Text style={[localStyles.actionText, { color: isDark ? '#fff' : '#000' }]}>{count}</Text>}
-  </TouchableOpacity>
+const PostActionIcon = memo(({ iconName, customEmoji, count, color, onPress, onLongPress, onCountPress, size = 26, style, isDark, isActive }) => (
+  <View style={[localStyles.actionIcon, style]}>
+    {/* כפתור האייקון עם hitSlop */}
+    <TouchableOpacity
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={250}
+      activeOpacity={0.6}
+      accessibilityRole="button"
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 5 }}
+    >
+      {customEmoji ? (
+         <Text style={{ fontSize: size }}>{customEmoji}</Text>
+      ) : (
+         <Ionicons name={isActive ? iconName.replace('-outline', '') : iconName} size={size} color={isActive ? color : (isDark ? '#ddd' : brand.ink)} />
+      )}
+    </TouchableOpacity>
+
+    {/* כפתור המספר עם העיצוב החדש והנגיש */}
+    {count > 0 && (
+      <TouchableOpacity 
+        onPress={onCountPress || onPress} 
+        hitSlop={{ top: 15, bottom: 15, left: 5, right: 15 }} 
+        style={[localStyles.countBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)' }]}
+      >
+         <Text style={[localStyles.actionText, { color: isDark ? '#ccc' : '#444' }]}>{count}</Text>
+      </TouchableOpacity>
+    )}
+  </View>
 ));
 
-const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
-  // ⭐️ [FIX-B] useShallow prevents new-object identity on every store change.
+const PostCard = ({ post, onOpenProfile, onOpenComments, onOpenLikes, isDark }) => {
   const {
     user, deletePost, editPost, repostPost, fetchProfilePreview,
-    toggleLike, setPulseCreateOpen, setPulseImageUri,
+    toggleLike, setPulseCreateOpen, setPulseImageUri, token,
   } = useAppStore(
     useShallow((state) => ({
       user: state.user,
@@ -82,36 +117,51 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
       toggleLike: state.toggleLike,
       setPulseCreateOpen: state.setPulseCreateOpen,
       setPulseImageUri: state.setPulseImageUri,
+      token: state.token,
     }))
   );
 
-  const [selectedVibe, setSelectedVibe] = useState(null);
+  const [isLiked, setIsLiked] = useState(post?.stats?.isLikedByMe || false);
+  const [myVibe, setMyVibe] = useState(post?.stats?.myVibe || null);
+  const [likeCount, setLikeCount] = useState(post?.stats?.likes || 0);
+
   const [showVibeMenu, setShowVibeMenu] = useState(false);
   const vibeMenuAnim = useRef(new Animated.Value(0)).current;
+  const emojiInputRef = useRef(null);
 
-  const [likeCount, setLikeCount] = useState(post?.stats?.likes || 0);
   const [isSaved, setIsSaved] = useState(false);
-
+  const [isReporting, setIsReporting] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
+  
+  // ⭐️ State חדש לשליטה בחלון משתפים!
+  const [isSharesModalVisible, setSharesModalVisible] = useState(false);
 
-  // ⭐️ [FIX-D] Edit state starts empty; populated only when opening edit modal.
   const [editText, setEditText] = useState('');
   const [editImage, setEditImage] = useState(null);
   const [isNewImagePicked, setIsNewImagePicked] = useState(false);
   const [isImageDeleted, setIsImageDeleted] = useState(false);
+  // ⭐️ FIX [IMAGE CROPPING]: dynamic aspect ratio per image.
+  // Default 4/3 is a reasonable placeholder before the image loads —
+  // avoids a jarring layout jump while keeping the feed stable.
+  // onLoad updates it to the image's actual ratio so the container
+  // always matches the photo exactly (no white bars, no cropping).
+  const [imageAspectRatio, setImageAspectRatio] = useState(4 / 3);
+  const [repostImageAspectRatio, setRepostImageAspectRatio] = useState(4 / 3);
 
-  // Schema mapping with fallbacks (server may return either shape)
-  const postTextContent = post?.text || post?.content || '';
-  const mediaUri = post?.imageUrl || post?.image;
-
-  // Sync server like count → local optimistic state
   useEffect(() => {
     setLikeCount(post?.stats?.likes || 0);
-  }, [post?.stats?.likes]);
+    setIsLiked(post?.stats?.isLikedByMe || false);
+    if (post?.stats?.myVibe) {
+      setMyVibe(post.stats.myVibe);
+    } else if (post?.stats?.isLikedByMe === false) {
+      setMyVibe(null);
+    }
+  }, [post?.stats]);
 
-  // Derived flags
+  const postTextContent = post?.text || post?.content || '';
+  const mediaUri = post?.imageUrl || post?.image;
   const hasValidImage = !!mediaUri && mediaUri !== 'null' && typeof mediaUri === 'string' && mediaUri.trim() !== '';
   const isVideoFile = hasValidImage && isVideoUri(mediaUri);
 
@@ -129,7 +179,6 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
   const postAuthorId = rawAuthorId ? String(rawAuthorId) : null;
   const canManage = !!currentUserId && !!postAuthorId && currentUserId === postAuthorId;
 
-  // ⭐️ [FIX-I] All handlers are useCallback for stable refs.
   const handleEditSave = useCallback(() => {
     const textChanged = editText.trim() !== postTextContent.trim();
     const imageChanged = isNewImagePicked || (isImageDeleted && hasValidImage);
@@ -155,51 +204,64 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
     Animated.timing(vibeMenuAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => setShowVibeMenu(false));
   }, [vibeMenuAnim]);
 
-  // ⭐️ Optimistic like with rollback on failure
-  const performToggleLike = useCallback(async (isUnlike) => {
+  const performToggleLike = useCallback(async (isUnlike, selectedEmoji = null) => {
     const prevCount = likeCount;
+    const prevLiked = isLiked;
+    const prevVibe = myVibe;
+
+    setIsLiked(!isUnlike);
+    setMyVibe(isUnlike ? null : selectedEmoji);
     setLikeCount((c) => (isUnlike ? Math.max(0, c - 1) : c + 1));
+
     try {
-      await toggleLike(String(post.id), isUnlike);
+      await toggleLike(String(post.id), isUnlike, selectedEmoji);
     } catch (e) {
-      // Roll back on failure
-      setLikeCount(prevCount);
+      setLikeCount(prevCount); setIsLiked(prevLiked); setMyVibe(prevVibe);
       if (Platform.OS !== 'web') {
         Alert.alert('Connection error', 'Could not save your reaction.');
       }
     }
-  }, [likeCount, toggleLike, post?.id]);
+  }, [likeCount, isLiked, myVibe, toggleLike, post?.id]);
 
-  const handleSelectVibe = useCallback((vibe) => {
-    setSelectedVibe((prev) => {
-      if (prev?.id === vibe.id) {
-        performToggleLike(true);
-        return null;
-      }
-      if (!prev) performToggleLike(false);
-      return vibe;
-    });
+  const handleSelectVibe = useCallback((vibeValue) => {
+    if (myVibe === vibeValue && isLiked) {
+      performToggleLike(true);
+    } else {
+      performToggleLike(false, vibeValue);
+    }
     closeVibeMenu();
-  }, [performToggleLike, closeVibeMenu]);
+  }, [myVibe, isLiked, performToggleLike, closeVibeMenu]);
 
   const handleQuickPressVibe = useCallback(() => {
-    setSelectedVibe((prev) => {
-      if (prev) {
-        performToggleLike(true);
-        return null;
-      }
-      performToggleLike(false);
-      return VIBES[0];
-    });
+    if (isLiked) {
+      performToggleLike(true);
+    } else {
+      performToggleLike(false, null);
+    }
     if (showVibeMenu) closeVibeMenu();
-  }, [performToggleLike, showVibeMenu, closeVibeMenu]);
+  }, [isLiked, performToggleLike, showVibeMenu, closeVibeMenu]);
+
+  const triggerNativeEmojiKeyboard = useCallback(() => {
+    emojiInputRef.current?.focus();
+  }, []);
+
+  const onCustomEmojiTyped = (text) => {
+    if (!text) return;
+    if (/[a-zA-Z0-9א-ת\s\.,!?\-_]/i.test(text)) {
+      emojiInputRef.current?.clear();
+      return;
+    }
+    handleSelectVibe(text);
+    emojiInputRef.current?.blur();
+    emojiInputRef.current?.clear();
+  };
 
   const handleBookmark = useCallback(() => setIsSaved((p) => !p), []);
   const handleSharePress = useCallback(() => setShowShareMenu(true), []);
 
-  // ⭐️ [SEC-1] Graceful clipboard fallback
   const handleNativeShare = useCallback(async () => {
     setShowShareMenu(false);
+    trackEvent('post_shared_externally', { postId: post?.id }); 
     const shareUrl = hasValidImage ? mediaUri : 'https://kliqtap.com';
     const shareMsg = postTextContent || `Check out ${authorName}'s post on KliqTap!`;
 
@@ -207,9 +269,7 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
       if (typeof navigator !== 'undefined' && navigator.share) {
         try {
           await navigator.share({ title: 'KliqTap', text: shareMsg, url: shareUrl });
-        } catch (e) {
-          console.warn('Share canceled or failed', e);
-        }
+        } catch (e) { console.warn('Share canceled or failed', e); }
       } else if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
         try {
           await navigator.clipboard.writeText(`${shareMsg} - ${shareUrl}`);
@@ -221,13 +281,9 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
         window.alert(`Share link: ${shareUrl}`);
       }
     } else {
-      try {
-        await Share.share({ message: shareMsg, url: shareUrl });
-      } catch (error) {
-        console.warn('Error sharing:', error);
-      }
+      try { await Share.share({ message: shareMsg, url: shareUrl }); } catch (error) { console.warn('Error sharing:', error); }
     }
-  }, [hasValidImage, mediaUri, postTextContent, authorName]);
+  }, [hasValidImage, mediaUri, postTextContent, authorName, post?.id]);
 
   const handleShareToPulse = useCallback(() => {
     setShowShareMenu(false);
@@ -238,8 +294,9 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
 
   const handleRepost = useCallback(async () => {
     setShowShareMenu(false);
+    trackEvent('post_reposted', { postId: post?.id, authorId: postAuthorId }); 
     if (repostPost) await repostPost(post);
-  }, [repostPost, post]);
+  }, [repostPost, post, postAuthorId]); 
 
   const handleDelete = useCallback(() => {
     setShowMenu(false);
@@ -264,12 +321,11 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
 
   const pickImageForEdit = useCallback(async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaType.All,
       allowsEditing: Platform.OS !== 'web',
-      aspect: [1, 1],
       quality: 0.8,
     });
-    if (!result.canceled && result.assets) {
+    if (!result.canceled && result.assets && result.assets.length > 0) {
       setEditImage(result.assets[0].uri);
       setIsNewImagePicked(true);
       setIsImageDeleted(false);
@@ -282,7 +338,6 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
     setIsNewImagePicked(false);
   }, []);
 
-  // ⭐️ [FIX-D] Populate edit state from CURRENT post at moment of opening.
   const handleOpenEdit = useCallback(() => {
     setShowMenu(false);
     setEditText(postTextContent);
@@ -292,10 +347,59 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
     setShowEditModal(true);
   }, [postTextContent, hasValidImage, mediaUri]);
 
+  const handleReport = useCallback((type) => {
+    setShowMenu(false);
+    const reasons = type === 'post'
+      ? [
+          { text: '🚫 Spam or irrelevant',      reason: 'spam' },
+          { text: '🔞 Inappropriate content',    reason: 'inappropriate_content' },
+          { text: '🤖 Fake / Scam',              reason: 'fake_account' },
+          { text: '😤 Harassment',               reason: 'harassment' },
+        ]
+      : [
+          { text: '🤖 Fake account',             reason: 'fake_account' },
+          { text: '😤 Harassment or threats',    reason: 'harassment' },
+          { text: '💊 Illegal activity',         reason: 'illegal_activity' },
+          { text: '🚫 Spam',                     reason: 'spam' },
+        ];
+    Alert.alert(
+      type === 'post' ? 'Report Kliq Feed' : 'Report User',
+      'Why are you reporting this?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        ...reasons.map(({ text, reason }) => ({
+          text,
+          onPress: () => _doReport(reason),
+        })),
+      ],
+    );
+  }, []);
+
+  const _doReport = useCallback(async (reason) => {
+    if (!postAuthorId || isReporting) return;
+    setIsReporting(true);
+    const ok = await _submitSecurityReport(postAuthorId, reason, token);
+    setIsReporting(false);
+    if (ok) {
+      Alert.alert('✅ Reported', 'Thank you for keeping KliqTap safe. Our team will review this.');
+    } else {
+      Alert.alert('Error', 'Could not submit your report. Please try again.');
+    }
+  }, [postAuthorId, token, isReporting]);
+
   if (!post) return null;
 
-  const mainVibeIconName = selectedVibe ? selectedVibe.icon : 'sparkles-outline';
-  const mainVibeColor = selectedVibe ? selectedVibe.color : (isDark ? '#ddd' : brand.ink);
+  let mainVibeIconName = 'heart-outline';
+  let mainVibeColor = isDark ? '#ddd' : brand.ink;
+  let customTextEmoji = null;
+
+  if (isLiked && myVibe) {
+    customTextEmoji = myVibe;
+    mainVibeColor   = brand.blue;
+  } else if (isLiked) {
+    mainVibeIconName = 'heart'; 
+    mainVibeColor   = '#FF2D55'; 
+  }
 
   const cardBg = isDark ? '#121212' : '#fff';
   const borderColor = isDark ? '#222' : '#EFEFEF';
@@ -308,7 +412,6 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
 
   return (
     <View style={[localStyles.cardContainer, { backgroundColor: cardBg, borderColor }]}>
-
       {/* Header */}
       <View style={localStyles.header}>
         <TouchableOpacity style={localStyles.headerLeft} activeOpacity={0.7} onPress={handleOpenProfile}>
@@ -319,7 +422,7 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
           </View>
         </TouchableOpacity>
 
-        {canManage && (
+        {!!currentUserId && (
           <TouchableOpacity onPress={() => setShowMenu(true)} style={localStyles.menuIcon} accessibilityLabel="Post options">
             <Ionicons name="ellipsis-horizontal" size={24} color={isDark ? '#888' : brand.soft} />
           </TouchableOpacity>
@@ -335,7 +438,7 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
 
       {/* Media */}
       {hasValidImage && (
-        <View style={localStyles.naturalImageWrapper}>
+        <View style={[localStyles.naturalImageWrapper, { aspectRatio: imageAspectRatio }]}>
           {isVideoFile ? (
             Platform.OS === 'web' ? (
               <video src={mediaUri} style={{ width: '100%', height: '100%', objectFit: 'cover' }} controls playsInline />
@@ -343,7 +446,15 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
               <Video source={{ uri: mediaUri }} style={localStyles.naturalImage} useNativeControls={true} resizeMode={ResizeMode.COVER} isLooping={false} shouldPlay={false} />
             )
           ) : (
-            <Image source={{ uri: mediaUri }} style={localStyles.naturalImage} resizeMode="contain" />
+            <Image
+              source={{ uri: mediaUri }}
+              style={localStyles.naturalImage}
+              resizeMode="cover"
+              onLoad={(e) => {
+                const { width: w, height: h } = e.nativeEvent.source;
+                if (w && h && h > 0) setImageAspectRatio(w / h);
+              }}
+            />
           )}
         </View>
       )}
@@ -364,7 +475,7 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
             <Text style={[localStyles.repostText, { color: textColor }]}>{repostTextContent}</Text>
           ) : null}
           {hasOriginalImage && (
-            <View style={localStyles.naturalRepostImageWrapper}>
+            <View style={[localStyles.naturalRepostImageWrapper, { aspectRatio: repostImageAspectRatio }]}>
               {isOriginalVideoFile ? (
                 Platform.OS === 'web' ? (
                   <video src={originalMediaUri} style={{ width: '100%', height: '100%', objectFit: 'cover' }} controls playsInline />
@@ -372,7 +483,15 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
                   <Video source={{ uri: originalMediaUri }} style={localStyles.naturalImage} useNativeControls={true} resizeMode={ResizeMode.COVER} isLooping={false} shouldPlay={false} />
                 )
               ) : (
-                <Image source={{ uri: originalMediaUri }} style={localStyles.naturalImage} resizeMode="contain" />
+                <Image
+                  source={{ uri: originalMediaUri }}
+                  style={localStyles.naturalImage}
+                  resizeMode="cover"
+                  onLoad={(e) => {
+                    const { width: w, height: h } = e.nativeEvent.source;
+                    if (w && h && h > 0) setRepostImageAspectRatio(w / h);
+                  }}
+                />
               )}
             </View>
           )}
@@ -383,6 +502,15 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
       <View style={localStyles.actionBar}>
         <View style={localStyles.actionRowLeft}>
           <View style={localStyles.relativeBox}>
+            
+            {showVibeMenu && (
+              <TouchableOpacity
+                style={localStyles.vibeMenuBackdrop}
+                activeOpacity={1}
+                onPress={closeVibeMenu}
+              />
+            )}
+
             {showVibeMenu && (
               <Animated.View style={[
                 localStyles.vibeMenuContainer,
@@ -393,24 +521,47 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
                 },
               ]}>
                 <View style={localStyles.vibeGrid}>
+                  
                   {VIBES.map((vibe) => (
-                    <TouchableOpacity
-                      key={vibe.id}
-                      onPress={() => handleSelectVibe(vibe)}
-                      style={[localStyles.vibeOption, { backgroundColor: isDark ? '#333' : '#f8f9fa' }]}
-                      accessibilityLabel={`React with ${vibe.label}`}
-                    >
-                      <Ionicons name={vibe.icon} size={22} color={vibe.color} />
-                    </TouchableOpacity>
+                  <TouchableOpacity 
+                  key={vibe.id} 
+                  onPress={() => handleSelectVibe(vibe.icon)} 
+                  style={[localStyles.vibeOption, { backgroundColor: isDark ? '#333' : '#f8f9fa' }]}
+                  >
+                  <Text style={{ fontSize: 22 }}>{vibe.icon}</Text>
+                  </TouchableOpacity>
                   ))}
+
+                  <TouchableOpacity 
+                  onPress={triggerNativeEmojiKeyboard} 
+                  style={[localStyles.vibeOption, { backgroundColor: '#FFD700', borderRadius: 20 }]}
+                  >
+                  <Ionicons name="add" size={24} color="#000" />
+                  </TouchableOpacity>
+
+                  <TextInput 
+                  ref={emojiInputRef} 
+                  style={{ position: 'absolute', left: -1000, width: 1, height: 1, opacity: 0 }} 
+                  maxLength={2} 
+                  onChangeText={onCustomEmojiTyped} 
+                  autoCorrect={false}
+                  />
+
                 </View>
               </Animated.View>
             )}
+
             <PostActionIcon
-              iconName={mainVibeIconName} count={likeCount} color={mainVibeColor}
-              onPress={handleQuickPressVibe} onLongPress={handleLongPressVibe}
-              size={selectedVibe ? 28 : 26}
-              style={selectedVibe && { transform: [{ scale: 1.1 }] }}
+              iconName={mainVibeIconName} 
+              customEmoji={customTextEmoji}
+              count={likeCount} 
+              color={mainVibeColor}
+              isActive={isLiked}
+              onPress={handleQuickPressVibe} 
+              onLongPress={handleLongPressVibe}
+              onCountPress={() => onOpenLikes && onOpenLikes(String(post.id))}
+              size={isLiked && myVibe ? 28 : 26}
+              style={isLiked && myVibe && { transform: [{ scale: 1.1 }] }}
               isDark={isDark}
             />
           </View>
@@ -421,14 +572,29 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
             onPress={() => onOpenComments && onOpenComments(String(post.id))}
             isDark={isDark}
           />
-          <PostActionIcon iconName="paper-plane-outline" count={0} onPress={handleSharePress} isDark={isDark} />
+
+          {/* ⭐️ כפתור השיתופים: אייקון פותח שיתוף, המספר פותח את רשימת המשתפים! */}
+          <PostActionIcon 
+            iconName="paper-plane-outline" 
+            count={post.stats?.shares || 0} 
+            onPress={handleSharePress} 
+            onCountPress={() => setSharesModalVisible(true)}
+            isDark={isDark} 
+          />
         </View>
         <TouchableOpacity onPress={handleBookmark} style={localStyles.bookmarkBtn} accessibilityLabel={isSaved ? 'Remove bookmark' : 'Save post'}>
           <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={24} color={isSaved ? brand.blue : (isDark ? '#ddd' : brand.ink)} />
         </TouchableOpacity>
       </View>
 
-      {/* Conditionally mounted modals (memory leak fix preserved from V6.4) */}
+      {/* החלון הקופץ של המשתפים מרונדר כאן בתחתית הכרטיס */}
+      {isSharesModalVisible && (
+        <PostSharesModal 
+          visible={isSharesModalVisible} 
+          onClose={() => setSharesModalVisible(false)} 
+          postId={post.id} 
+        />
+      )}
 
       {showShareMenu && (
         <Modal visible={true} transparent animationType="fade" onRequestClose={() => setShowShareMenu(false)}>
@@ -468,14 +634,35 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
         <Modal visible={true} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
           <TouchableOpacity style={[globalStyles.overlay, { backgroundColor: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.5)' }]} activeOpacity={1} onPress={() => setShowMenu(false)}>
             <View style={[globalStyles.cardModal, localStyles.menuModalCard, { backgroundColor: isDark ? '#1C1C1E' : '#fff' }]}>
-              <TouchableOpacity onPress={handleOpenEdit} style={[localStyles.menuOptionRow, { borderBottomColor: isDark ? '#333' : '#eee' }]}>
-                <Ionicons name="pencil" size={18} color={isDark ? '#fff' : '#000'} style={localStyles.menuOptionIcon} />
-                <Text style={{ color: isDark ? '#fff' : '#000' }}>Edit Kliq Feed</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleDelete} style={[localStyles.menuOptionRow, { borderBottomWidth: 0 }]}>
-                <Ionicons name="trash" size={18} color={brand.red} style={localStyles.menuOptionIcon} />
-                <Text style={localStyles.menuDangerText}>Delete Kliq Feed</Text>
-              </TouchableOpacity>
+              {canManage ? (
+                <>
+                  <TouchableOpacity onPress={handleOpenEdit} style={[localStyles.menuOptionRow, { borderBottomColor: isDark ? '#333' : '#eee' }]}>
+                    <Ionicons name="pencil" size={18} color={isDark ? '#fff' : '#000'} style={localStyles.menuOptionIcon} />
+                    <Text style={{ color: isDark ? '#fff' : '#000' }}>Edit Kliq Feed</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleDelete} style={[localStyles.menuOptionRow, { borderBottomWidth: 0 }]}>
+                    <Ionicons name="trash" size={18} color={brand.red} style={localStyles.menuOptionIcon} />
+                    <Text style={localStyles.menuDangerText}>Delete Kliq Feed</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    onPress={() => handleReport('post')}
+                    style={[localStyles.menuOptionRow, { borderBottomColor: isDark ? '#333' : '#eee' }]}
+                  >
+                    <Ionicons name="alert-circle-outline" size={18} color={brand.red} style={localStyles.menuOptionIcon} />
+                    <Text style={localStyles.menuDangerText}>Report Kliq Feed</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleReport('user')}
+                    style={[localStyles.menuOptionRow, { borderBottomWidth: 0 }]}
+                  >
+                    <Ionicons name="flag-outline" size={18} color={brand.red} style={localStyles.menuOptionIcon} />
+                    <Text style={localStyles.menuDangerText}>Report User</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           </TouchableOpacity>
         </Modal>
@@ -505,15 +692,23 @@ const PostCard = ({ post, onOpenProfile, onOpenComments, isDark }) => {
                   <View style={localStyles.editImageWrapper}>
                     {editImage ? (
                       <View style={[localStyles.editImageContainer, { backgroundColor: isDark ? '#1C1C1E' : '#f0f0f0' }]}>
-                        <Image source={{ uri: editImage }} style={localStyles.fullImg} resizeMode="cover" />
+                        {isVideoUri(editImage) ? (
+                          Platform.OS === 'web' ? (
+                            <video src={editImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} controls playsInline />
+                          ) : (
+                            <Video source={{ uri: editImage }} style={localStyles.fullImg} useNativeControls={true} resizeMode={ResizeMode.COVER} isLooping={false} shouldPlay={false} />
+                          )
+                        ) : (
+                          <Image source={{ uri: editImage }} style={localStyles.fullImg} resizeMode="cover" />
+                        )}
                         <TouchableOpacity onPress={removeImageInEdit} style={localStyles.editImageCloseBtn}>
                           <Ionicons name="close" size={20} color="#fff" />
                         </TouchableOpacity>
                       </View>
                     ) : (
                       <TouchableOpacity onPress={pickImageForEdit} style={[localStyles.addPhotoBtn, { backgroundColor: isDark ? '#102A43' : '#F0F8FF', borderColor: brand.blue }]}>
-                        <Ionicons name="image" size={24} color={brand.blue} />
-                        <Text style={localStyles.addPhotoText}>Add Photo</Text>
+                        <Ionicons name="images" size={24} color={brand.blue} />
+                        <Text style={localStyles.addPhotoText}>Add Photo / Video</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -551,23 +746,36 @@ const localStyles = StyleSheet.create({
   menuIcon: { padding: 10, paddingRight: 0 },
   textContainer: { paddingHorizontal: 12, paddingBottom: 10 },
   postText: { fontSize: 15, lineHeight: 22 },
-  naturalImageWrapper: { width: '100%', aspectRatio: 1, backgroundColor: 'transparent', overflow: 'hidden', marginVertical: 4 },
+  naturalImageWrapper: { width: '100%', backgroundColor: 'transparent', overflow: 'hidden', marginVertical: 4 },
   naturalImage: { width: '100%', height: '100%' },
   repostBox: { marginHorizontal: 12, marginBottom: 10, borderWidth: 1, borderRadius: 12, padding: 12 },
   repostHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   repostAvatar: { width: 24, height: 24, borderRadius: 12, marginRight: 8 },
   repostUsername: { fontWeight: '600', fontSize: 13 },
   repostText: { fontSize: 14, lineHeight: 20 },
-  naturalRepostImageWrapper: { width: '100%', aspectRatio: 1, backgroundColor: 'transparent', overflow: 'hidden', borderRadius: 8, marginTop: 10 },
+  naturalRepostImageWrapper: { width: '100%', backgroundColor: 'transparent', overflow: 'hidden', borderRadius: 8, marginTop: 10 },
   actionBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 4, zIndex: 20 },
   actionRowLeft: { flexDirection: 'row', gap: 20, alignItems: 'center' },
   relativeBox: { position: 'relative', alignItems: 'center', overflow: 'visible' },
-  bookmarkBtn: { padding: 5 },
-  actionIcon: { flexDirection: 'row', alignItems: 'center', padding: 4 },
-  actionText: { marginLeft: 6, fontWeight: '600', fontSize: 14 },
-  vibeMenuContainer: { position: 'absolute', bottom: 50, left: -10, borderRadius: 20, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 10, borderWidth: 1, width: 260 },
+  vibeMenuBackdrop: { position: 'absolute', top: -1000, bottom: -1000, left: -1000, right: -1000, zIndex: 10, backgroundColor: 'transparent' },
+  vibeMenuContainer: { position: 'absolute', bottom: 50, left: 0, zIndex: 20, borderRadius: 20, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 10, borderWidth: 1, width: 280 },
   vibeGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
   vibeOption: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16 },
+  bookmarkBtn: { padding: 5 },
+  
+  // ⭐️ העיצובים החדשים של האייקונים והתגיות
+  actionIcon: { flexDirection: 'row', alignItems: 'center', padding: 4 },
+  actionText: { fontWeight: '600', fontSize: 14 },
+  countBadge: {
+    marginLeft: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // ⭐️ סוף העיצובים החדשים
+
   shareModalCard: { position: 'absolute', bottom: 100, width: '90%', alignSelf: 'center', padding: 0 },
   shareTitle: { padding: 15, fontWeight: 'bold', textAlign: 'center', borderBottomWidth: 1 },
   shareOptionRow: { padding: 15, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center' },

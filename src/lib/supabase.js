@@ -2,13 +2,22 @@
 import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 
-// הכתובת הבסיסית (בלי ה-/rest/v1/ בסוף)
-const supabaseUrl = 'https://yocrdrdbliooioymepfk.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvY3JkcmRibGlvb2lveW1lcGZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2Nzg0NzIsImV4cCI6MjA4MDI1NDQ3Mn0.JoCtY1ALHsnF0Zku71ktoBlz-7cw35AS6mzbHG6QY5M';
+// ⭐️ Expo SDK 52: EXPO_PUBLIC_* variables are automatically inlined into the
+// client bundle at build time. No expo-constants or app.config.js changes needed.
+// Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env file.
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (__DEV__ && (!supabaseUrl || !supabaseAnonKey)) {
+  console.error(
+    '[supabase] Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY.\n' +
+    'Add them to your .env file and restart the dev server.'
+  );
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: false, 
+    persistSession: false,
     autoRefreshToken: false,
   },
 });

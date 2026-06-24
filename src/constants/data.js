@@ -1,6 +1,8 @@
-import { Dimensions } from 'react-native';
+// client/src/constants/data.js
 
-export const { width, height } = Dimensions.get('window');
+// 🛡️ מידות קבועות למניעת שגיאת ReferenceError ב-Hermes/Web
+export const width = 375;
+export const height = 812;
 
 /* ---------- Palette and constants ---------- */
 // Object.freeze ensures the core brand palette cannot be mutated accidentally
@@ -26,7 +28,7 @@ export const ABOUT_BODY =
   `${APP_NAME} is a connectivity platform built on empathy. Our mission is to solve loneliness by facilitating meaningful, small-group connections based on shared life experiences, goals, and core values. We use AI to help you find your people, whether it's a support circle, a project team, or a study group. Created by Ran Eizikovich (with help from a friend), ${APP_NAME} values privacy, accessibility, and the power of genuine human connection.`;
 
 /* ---------- Home groups list (DEMO) ---------- */
-export const HOME_GROUPS_EN = [
+export const HOME_GROUPS_EN = Object.freeze([
   "Students","Young Professionals","Professionals","Remote Workers","Freelancers",
   "Adults 45-65","Hobbies","Health","Older Adults 50-80","Under 30 Singles",
   "Low Income","Solo Employees","Minorities","LGBT","Immigrants",
@@ -35,10 +37,10 @@ export const HOME_GROUPS_EN = [
   "Startup Founders", "Musicians", "Photographers", "Parents of Toddlers",
   "Digital Nomads", "Mental Health Advocates", "Coders Guild", "Writers Corner",
   "Language Exchange (Spanish)", "Meditation Circle", "Cooking Fans", "Fitness Buddies"
-];
+]);
 
 /* Group/User images (DEMO) */
-export const GROUP_IMG = {
+export const GROUP_IMG = Object.freeze({
   "Students": "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=400&h=400&fit=crop",
   "Young Professionals": "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=400&h=400&fit=crop",
   "Professionals": "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=400&h=400&fit=crop",
@@ -77,9 +79,9 @@ export const GROUP_IMG = {
   "Study Group": "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?w=400&h=400&fit=crop",
   "Run Club": "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=400&h=400&fit=crop",
   "Design Pods": "https://images.unsplash.com/photo-1552581234-26160f608093?w=400&h=400&fit=crop",
-};
+});
 
-export const USER_IMG = {
+export const USER_IMG = Object.freeze({
   "Alex": "https://randomuser.me/api/portraits/men/15.jpg",
   "Sara": "https://randomuser.me/api/portraits/women/47.jpg",
   "Jon": "https://randomuser.me/api/portraits/men/23.jpg",
@@ -93,15 +95,16 @@ export const USER_IMG = {
   "Ryan": "https://randomuser.me/api/portraits/men/50.jpg",
   "Olivia": "https://randomuser.me/api/portraits/women/70.jpg",
   "Miyzen": "https://randomuser.me/api/portraits/men/41.jpg",
-};
+});
 
 export const imageFor = (title) =>
   GROUP_IMG[title] || USER_IMG[title] || `https://picsum.photos/seed/${encodeURIComponent(title)}/400/400`;
 
-export const EXPLORE_CATEGORIES = [
+export const EXPLORE_CATEGORIES = Object.freeze([
   { title: "Creative & Arts", icon: "🎨" },{ title: "Tech & Learning", icon: "💻" },
   { title: "Wellness & Sport", icon: "🧘" },{ title: "Local Communities", icon: "🏘️" },
   { title: "Parenting & Family", icon: "👨‍👩‍👧" },{ title: "Career & Business", icon: "📈" },
+  { title: "Jobs & Opportunities", icon: "💼" },
   { title: "Volunteering", icon: "🤝" },{ title: "Languages", icon: "🗣️" },
   { title: "Gaming & Fun", icon: "🎮" },{ title: "Food & Cooking", icon: "🍳" },
   { title: "Outdoors", icon: "🥾" },{ title: "Faith & Values", icon: "🕊️" },
@@ -112,9 +115,9 @@ export const EXPLORE_CATEGORIES = [
   { title: "Pets", icon: "🐶" }, { title: "Automotive", icon: "🚗" },
   { title: "History", icon: "🏛️" }, { title: "Music", icon: "🎵" },
   { title: "Film", icon: "🎬" }, { title: "Fashion", icon: "👗" }
-];
+]);
 
-export const DEMO_MEMBERS = [
+export const DEMO_MEMBERS = Object.freeze([
   { name: "Alex", img: "https://randomuser.me/api/portraits/men/15.jpg", intent: "Start Study Circle" },
   { name: "Sara", img: "https://randomuser.me/api/portraits/women/47.jpg", intent: "Join Run Club" },
   { name: "Jon", img: "https://randomuser.me/api/portraits/men/23.jpg", intent: "Join Writing Circle" },
@@ -127,11 +130,11 @@ export const DEMO_MEMBERS = [
   { name: "Emily", img: "https://randomuser.me/api/portraits/women/65.jpg", intent: "Start Gardeners Group" },
   { name: "Ryan", img: "https://randomuser.me/api/portraits/men/50.jpg", intent: "Join Startup Founders" },
   { name: "Olivia", img: "https://randomuser.me/api/portraits/women/70.jpg", intent: "Find Musicians" },
-];
+]);
 
 export const USER_PROFILE_PIC = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&h=400&fit=crop"; 
 
-export const DEMO_GROUP_UPDATES = [
+export const DEMO_GROUP_UPDATES = Object.freeze([
   { id: "u1", name: "Add Update", img: USER_PROFILE_PIC, isSelf: true, text: "Share an update with your groups...", isNew: false, isLive: false },
   { id: "g1", name: "AI Developers", img: GROUP_IMG["AI Developers"], text: "Posted a new link about GPT-5.", isNew: true, isLive: true },
   { id: "g2", name: "Students", img: GROUP_IMG["Students"], text: "New study session scheduled for tonight!", isNew: true, isLive: true },
@@ -139,7 +142,7 @@ export const DEMO_GROUP_UPDATES = [
   { id: "g4", name: "Writers Corner", img: GROUP_IMG["Writers Corner"], text: "Jon just shared a new short story.", isNew: true, isLive: false },
   { id: "g5", name: "Local Gardeners", img: GROUP_IMG["Local Gardeners"], text: "Emily is asking for advice on tomatoes.", isNew: false, isLive: true },
   { id: "g6", name: "Startup Founders", img: GROUP_IMG["Startup Founders"], text: "Luna shared a new pitch deck template.", isNew: false, isLive: false },
-];
+]);
 
 export const DEMO_POSTS = [];
 export const DEMO_GROUP_POSTS = {};
@@ -147,31 +150,31 @@ export const getGroupPosts = (groupName) => {
   return [];
 }
 
-export const DEMO_ACCOUNT_NOTIFICATIONS = [
+export const DEMO_ACCOUNT_NOTIFICATIONS = Object.freeze([
   { id: 'n1', icon: '❤️', text: 'Lia and 3 others liked your post in "Wellness Group".', time: '10m ago' },
   { id: 'n2', icon: '💬', text: 'David replied to your comment: "Great point, I agree!"', time: '45m ago' },
   { id: 'n3', icon: '👥', text: 'Sara accepted your invitation to join "Run Club".', time: '2h ago' },
-];
+]);
 
-export const DEMO_GENERAL_NOTIFICATIONS = [
+export const DEMO_GENERAL_NOTIFICATIONS = Object.freeze([
   { id: 'n4', icon: '🗓️', text: 'Event Reminder: "Study sprint" is starting in 1 hour.', time: '4:00 PM' },
   { id: 'n5', icon: '🧭', text: 'AI Suggestion: A new group "React Native Devs" matches your interests.', time: '1d ago' },
   { id: 'n6', icon: '🏅', text: 'New Badge Unlocked: "Community Builder"! Keep up the great work.', time: '2d ago' },
-];
+]);
 
-export const DEMO_MESSAGES = [
+export const DEMO_MESSAGES = Object.freeze([
   { id: 'm1', type: 'text', sender: 'Study Group', body: 'Meeting link pinned. Be on time.', time: '10:20 AM', unread: 1 },
   { id: 'm2', type: 'text', sender: 'Lia', body: 'Thanks for the chat this morning!', time: '9:05 AM', unread: 0 },
   { id: 'm3', type: 'text', sender: 'Design Pods', body: 'Can you review this new mockup?', time: 'Yesterday', unread: 3 },
   { id: 'm4', type: 'text', sender: 'Jon', body: 'That idea for the story is great!', time: '2d ago', unread: 0 },
-];
-export const DEMO_VOICE_NOTES = [
+]);
+export const DEMO_VOICE_NOTES = Object.freeze([
   { id: 'v1', type: 'voice', sender: 'Mike', body: 'Voice message (0:45)', time: '1:15 PM', unread: 1 },
   { id: 'v2', type: 'voice', sender: 'Hiking Enthusiasts', body: 'Voice message (1:30) - Trail update', time: 'Yesterday', unread: 0 },
-];
-export const DEMO_CALL_LOG = [
+]);
+export const DEMO_CALL_LOG = Object.freeze([
   { id: 'c1', type: 'call-missed', sender: 'Sara', body: 'Missed video call', time: '1:30 PM', unread: 0 },
   { id: 'c2', type: 'call-in', sender: 'AI Developers', body: 'Group call (12:05)', time: '12:05 PM', unread: 0 },
   { id: 'c3', type: 'call-out', sender: 'Alex', body: 'Outgoing call (8:00 AM)', time: '8:00 AM', unread: 0 },
   { id: 'c4', type: 'call-missed', sender: 'David', body: 'Missed call', time: 'Yesterday', unread: 0 },
-];
+]);

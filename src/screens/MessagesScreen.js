@@ -1,11 +1,5 @@
 // client/src/screens/MessagesScreen.js
-// ⭐️ V10.2 ULTIMATE: Clean Layout + DM Name Resolution + Re-render Fix ⭐️
-//
-// CHANGES from V10.1:
-//   [FIX] useEffect dependency array: removed userCache and resolveUser
-//         from deps to prevent re-render loop. The internal !userCache[otherId]
-//         check still guarantees each user is resolved only once. Saves CPU
-//         and battery on weak devices.
+// ⭐️ V11.0 PRODUCTION — Premium Organized Layout (Direct, Groups, Calls) ⭐️
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -70,9 +64,6 @@ export default function MessagesScreen({ messageTab, setMessageTab, setVideoModa
   }, [refreshAllData]);
 
   // רזולוציית משתמשים להיסטוריית הצ'אט
-  // ⭐️ V10.2: יציבות — הוצאנו את userCache ו-resolveUser מה-deps כדי
-  // למנוע re-render loop. הבדיקה הפנימית !userCache[otherId] עדיין
-  // מוודאת ש-resolveUser נקרא רק פעם אחת לכל משתמש.
   useEffect(() => {
     if (!chatHistory) return;
     Object.keys(chatHistory).forEach(chatId => {
@@ -102,29 +93,33 @@ export default function MessagesScreen({ messageTab, setMessageTab, setVideoModa
   }, [startCall]);
 
   /**
-   * בניית רשימת השיחות מההיסטוריה והמטא-דאטה (כולל תיקון באג השמות dm_)
+   * בניית 2 רשימות נפרדות לחלוטין במקביל:
+   * 1. conversationList: רשימת השיחות הכללית (לפי הודעה אחרונה מכל שיחה)
+   * 2. callList: היסטוריית שיחות מלאה ששולפת כל שיחה קולית/וידאו ממעמקי ההיסטוריה
    */
-  const conversationList = useMemo(() => {
-    if (!chatHistory) return [];
+  const { conversationList, callList } = useMemo(() => {
+    if (!chatHistory) return { conversationList: [], callList: [] };
 
-    return Object.keys(chatHistory).map(chatId => {
+    const convos = [];
+    const calls = [];
+
+    Object.keys(chatHistory).forEach(chatId => {
       const messages = chatHistory[chatId];
-      if (!messages || messages.length === 0) return null;
+      if (!messages || messages.length === 0) return;
 
-      const lastMsg = messages[messages.length - 1];
       const safeChatId = String(chatId);
       const metadata = chatMetadata?.[safeChatId];
 
       let displayTitle = null;
-      let displayAvatar = lastMsg.sender?.avatar || lastMsg.sender?.avatarUrl || null;
+      let displayAvatar = null;
       let isGroup;
       let targetUserId = null; 
 
-      // 🌟 KLIQMIND FIX: זיהוי מדויק של DM מול קבוצה
+      // זיהוי מדויק של DM מול קבוצה
       if (metadata && typeof metadata.isDM === 'boolean') {
         isGroup = !metadata.isDM;
       } else if (safeChatId.startsWith('dm_')) {
-        isGroup = false; // אם מתחיל ב-dm_, זה בוודאות לא קבוצה
+        isGroup = false; 
       } else {
         isGroup = !(safeChatId.length === 36 && safeChatId.split('-').length === 5);
       }
@@ -133,15 +128,12 @@ export default function MessagesScreen({ messageTab, setMessageTab, setVideoModa
         displayTitle = 'Post Comments';
         isGroup = false;
       } else if (!isGroup) {
-        
-        // מנסים לחלץ את המשתמש השני
+        // חילוץ המשתמש השני בשיחה פרטית
         let otherId = metadata?.otherUserId || getOtherUserIdInDM?.(chatId);
         
-        // אם לא מצאנו, ננסה לחלץ מתוך המחרוזת של ה-dm_
         if (!otherId && safeChatId.startsWith('dm_')) {
             const parts = safeChatId.split('_');
             if (parts.length >= 3) {
-                // המזהה של הצד השני הוא זה שאינו ה-ID שלי
                 otherId = parts[1] === myId ? parts[2] : parts[1];
             }
         }
@@ -153,7 +145,6 @@ export default function MessagesScreen({ messageTab, setMessageTab, setVideoModa
             displayAvatar = userCache[otherId].avatarUrl || null;
         }
 
-        // מונע מסטרינגים מכוערים של dm_ להופיע כשם
         if (!displayTitle && metadata?.name && !metadata.name.startsWith('dm_')) {
             displayTitle = metadata.name;
         }
@@ -180,45 +171,91 @@ export default function MessagesScreen({ messageTab, setMessageTab, setVideoModa
       }
 
       const unreadCount = metadata?.unreadCount || 0;
+      const lastMsg = messages[messages.length - 1];
 
-      return {
+      // 1. דחיפה לרשימת השיחות הכללית
+      convos.push({
         id: String(lastMsg.id || Date.now()),
         chatId: safeChatId,
         targetUserId: targetUserId, 
         isGroup: isGroup,           
         sender: displayTitle,
-        text: lastMsg.body || lastMsg.text,
-        body: lastMsg.body || lastMsg.text,
+        text: lastMsg.body || lastMsg.text || '',
+        body: lastMsg.body || lastMsg.text || '',
         time: formatTime(lastMsg.time || lastMsg.createdAt),
-        rawTime: lastMsg.time || lastMsg.createdAt, 
+        rawTime: lastMsg.time || lastMsg.createdAt || new Date().toISOString(), 
         type: lastMsg.type || 'text',
         unread: unreadCount,        
         hasUnread: unreadCount > 0, 
-        avatar: displayAvatar,
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => new Date(b.rawTime || 0) - new Date(a.rawTime || 0));
+        avatar: displayAvatar || lastMsg.sender?.avatar || lastMsg.sender?.avatarUrl,
+      });
+
+      // 2. דחיפה לרשימת שיחות הטלפון והוידאו (סריקה של כל הודעות השיחה מהעבר)
+      messages.forEach(msg => {
+        const t = msg.type?.toLowerCase() || '';
+        if (t.includes('call') || t === 'voice' || t === 'video') {
+            const isVideo = t.includes('video') || (msg.body || msg.text || '').toLowerCase().includes('video');
+            calls.push({
+                id: String(msg.id || Date.now() + Math.random()),
+                chatId: safeChatId,
+                targetUserId: targetUserId,
+                isGroup: isGroup,
+                sender: displayTitle,
+                text: msg.body || msg.text || (isVideo ? 'Video Call' : 'Voice Call'),
+                body: msg.body || msg.text || (isVideo ? 'Video Call' : 'Voice Call'),
+                time: formatTime(msg.time || msg.createdAt),
+                rawTime: msg.time || msg.createdAt || new Date().toISOString(),
+                type: isVideo ? 'video_call' : 'voice_call',
+                unread: 0, 
+                hasUnread: false,
+                avatar: displayAvatar || msg.sender?.avatar || msg.sender?.avatarUrl,
+            });
+        }
+      });
+    });
+
+    return {
+        conversationList: convos.sort((a, b) => new Date(b.rawTime) - new Date(a.rawTime)),
+        callList: calls.sort((a, b) => new Date(b.rawTime) - new Date(a.rawTime))
+    };
   }, [chatHistory, userCache, groups, getOtherUserIdInDM, chatMetadata, myId]);
 
   /**
-   * סינון הרשימה לפי טאבים וחיפוש
+   * ⭐️ סינון חדש ומאורגן לחלוטין לפי 3 קטגוריות ברורות ⭐️
    */
   const filteredMessages = useMemo(() => {
-    let items = conversationList;
-    if (messageTab === 'messages') items = items.filter(i => !i.type || i.type === 'text' || i.type === 'voice');
-    else if (messageTab === 'calls') items = items.filter(i => i.type?.includes('call'));
+    let items = [];
+    
+    if (messageTab === 'calls') {
+        // טאב שיחות: מציג את היסטוריית שיחות הוידאו והקול
+        items = callList;
+    } else if (messageTab === 'messages') {
+        // טאב קבוצות: מציג אך ורק שיחות קבוצתיות
+        items = conversationList.filter(i => i.isGroup);
+    } else {
+        // טאב Direct: מציג אך ורק שיחות פרטיות בין משתמשים (ללא קבוצות)
+        items = conversationList.filter(i => !i.isGroup);
+    }
+
+    // סינון חיפוש
     if (searchText.trim()) {
       const lower = searchText.toLowerCase();
       items = items.filter(i => i.sender?.toLowerCase().includes(lower) || i.body?.toLowerCase().includes(lower));
     }
+    
     return items;
-  }, [conversationList, messageTab, searchText]);
+  }, [conversationList, callList, messageTab, searchText]);
 
   const handleItemPress = useCallback((item) => {
-    if (item.type?.startsWith('call')) setVideoModalOpen(true);
-    else openChat(item.chatId);
-  }, [setVideoModalOpen, openChat]);
+    // אם המשתמש נמצא בלשונית שיחות, לחיצה תחייג אליו מיד חזרה
+    if (messageTab === 'calls' && item.targetUserId) {
+        const isVideo = item.type === 'video_call';
+        handleCallPress(item.targetUserId, isVideo);
+    } else {
+        // בכל לשונית אחרת, הלחיצה תפתח את הצאט הרגיל
+        openChat(item.chatId);
+    }
+  }, [openChat, handleCallPress, messageTab]);
 
   const handleItemLongPress = useCallback((item) => {
     Alert.alert(
@@ -231,7 +268,12 @@ export default function MessagesScreen({ messageTab, setMessageTab, setVideoModa
     );
   }, [deleteChatConversation]);
 
-  const TABS = [{ key: 'all', label: 'All' }, { key: 'messages', label: 'Messages' }, { key: 'calls', label: 'Calls' }];
+  // הגדרת כותרות הלשוניות החדשות והמסודרות של האפליקציה
+  const TABS = [
+    { key: 'all', label: 'Direct' },
+    { key: 'messages', label: 'Groups' },
+    { key: 'calls', label: 'Calls' }
+  ];
 
   return (
     <View style={[localStyles.container, { backgroundColor: isDark ? '#000' : '#f8f9fa' }]}>
@@ -289,10 +331,10 @@ export default function MessagesScreen({ messageTab, setMessageTab, setVideoModa
         ))}
       </View>
 
-      {/* Main Chat List */}
+      {/* Main Chat / Call List */}
       <FlatList
         data={filteredMessages}
-        keyExtractor={(item, index) => item?.chatId ? String(item.chatId) : `chat-${index}`}
+        keyExtractor={(item, index) => item?.id ? String(item.id) : `chat-${index}`}
         renderItem={({ item }) => (
           <View style={[
               localStyles.rowContainer, 
@@ -310,7 +352,8 @@ export default function MessagesScreen({ messageTab, setMessageTab, setVideoModa
                 />
              </View>
 
-             {!item.isGroup && item.targetUserId && (
+             {/* כפתורי חיוג מהיר מופיעים רק בלשוניות הטקסט הרגילות */}
+             {!item.isGroup && item.targetUserId && messageTab !== 'calls' && (
                <View style={localStyles.quickActions}>
                   <TouchableOpacity style={localStyles.quickBtn} onPress={() => handleCallPress(item.targetUserId, false)}>
                       <Ionicons name="call" size={20} color={Data.brand.blue} />
@@ -324,11 +367,13 @@ export default function MessagesScreen({ messageTab, setMessageTab, setVideoModa
         )}
         ListEmptyComponent={() => (
           <View style={localStyles.emptyState}>
-            <Text style={localStyles.emptyStateIcon}>📭</Text>
+            <Text style={localStyles.emptyStateIcon}>
+              {messageTab === 'calls' ? '📞' : messageTab === 'messages' ? '👥' : '📭'}
+            </Text>
             <Text style={[globalStyles.p, localStyles.textCenter, { color: isDark ? '#aaa' : '#333' }]}>
               {searchText
                 ? `No results for "${searchText}"`
-                : `No ${messageTab === 'calls' ? 'calls' : 'messages'} yet.`}
+                : `No ${messageTab === 'calls' ? 'call history' : messageTab === 'messages' ? 'groups' : 'direct messages'} yet.`}
             </Text>
           </View>
         )}
@@ -365,11 +410,8 @@ const localStyles = StyleSheet.create({
       paddingLeft: 4,
   },
   quickBtn: { 
-      width: 42, 
-      height: 42, 
-      borderRadius: 21, 
+      width: 42, height: 42, borderRadius: 21, 
       backgroundColor: 'rgba(0, 122, 255, 0.1)',
-      alignItems: 'center', 
-      justifyContent: 'center',
+      alignItems: 'center', justifyContent: 'center',
   },
 });

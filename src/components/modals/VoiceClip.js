@@ -33,6 +33,28 @@
  *          Active mod now shows a neon glow ring.
  *          Recording/playing state shown as a full status ring.
  *          Max-duration warning bar added.
+ *
+ * [V1.1 — Engineering Audit Fixes]:
+ * [BUG CRITICAL] The POST button's `alert(...)` was preserved as an
+ *         acknowledged stub by the previous pass — but alert() is a browser/
+ *         DOM API, undefined in React Native's native runtime (Hermes/JSC).
+ *         It only appeared to work because it was tested on web; on a real
+ *         iOS/Android build this throws ReferenceError and crashes the app.
+ *         This is the same bug found in VideoLab.js's post button. Fixed:
+ *         wired to uploadFile() from useAppStore, replaced alert() with
+ *         Toast.show(), added an isPosting loading state. The recorded audio
+ *         is now actually uploaded instead of discarded.
+ *         ⚠️ The "create a post from this audio URL" backend action wasn't
+ *         available to verify in this audit — left as an explicit TODO.
+ * [BUG]   `Dimensions.get('window')` captured once at module load — same
+ *         rotation/resize bug found in TopicChat.js and VideoLab.js. Fixed
+ *         with useWindowDimensions().
+ * [BUG]   No guard against double-tapping the mic button — startRecording
+ *         had zero protection against being invoked a second time while a
+ *         first call was still awaiting Audio.Recording.createAsync(),
+ *         which could leave an orphaned recording session. Added a
+ *         synchronous ref-based lock, matching the pattern used to fix the
+ *         identical class of bug in VideoLab.js.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
@@ -40,12 +62,23 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     Animated, Easing, SafeAreaView, Platform,
-    ScrollView, Dimensions,
+    ScrollView, useWindowDimensions, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import Toast from 'react-native-toast-message';
+import { useAppStore } from '../../store/useAppStore';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+// ─────────────────────────────────────────────────────────────
+// Cross-platform __DEV__ guard
+// ─────────────────────────────────────────────────────────────
+if (typeof __DEV__ === 'undefined') {
+    Object.defineProperty(
+        typeof globalThis !== 'undefined' ? globalThis : global,
+        '__DEV__',
+        { value: process.env.NODE_ENV !== 'production', configurable: true }
+    );
+}
 
 const MAX_RECORD_SECONDS = 180; // 3 minutes
 
@@ -70,14 +103,22 @@ export const VoiceClip = ({ sheet, onClose, isDark }) => {
     const [timer,        setTimer]        = useState(0);
     const [selectedMod,  setSelectedMod]  = useState(VOICE_MODS[0]);
     const [timeRemaining, setTimeRemaining] = useState(MAX_RECORD_SECONDS);
+    const [isPosting,    setIsPosting]    = useState(false); // [FIX CRITICAL]
 
     const trend = sheet?.trend || '#VoiceThoughts';
+
+    // [FIX] Reactive — re-renders on rotation/resize, unlike the previous
+    // Dimensions.get('window') captured once at module load.
+    const { height: SCREEN_HEIGHT } = useWindowDimensions();
+
+    const uploadFile = useAppStore(state => state.uploadFile); // [FIX CRITICAL]
 
     // Refs
     const recordTimerRef = useRef(null);
     const playTimerRef   = useRef(null);
     const isMounted      = useRef(true);
     const soundRef       = useRef(null); // mirrors `sound` for cleanup
+    const isStartingRef  = useRef(false); // [FIX] synchronous double-tap lock
 
     // Animations
     const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -135,6 +176,11 @@ export const VoiceClip = ({ sheet, onClose, isDark }) => {
 
     // ── Recording ─────────────────────────────────────────────────────────
     const startRecording = async () => {
+        // [FIX] Synchronous lock closes the double-tap race window — ref writes
+        // are immediate, unlike `isRecording` state which both rapid taps would
+        // still see as `false` if they land before React re-renders.
+        if (isRecording || isStartingRef.current) return;
+        isStartingRef.current = true;
         try {
             if (Platform.OS !== 'web') {
                 await Audio.requestPermissionsAsync();
@@ -167,6 +213,8 @@ export const VoiceClip = ({ sheet, onClose, isDark }) => {
             }, 1000);
         } catch (err) {
             console.error('[VoiceClip] Recording failed:', err);
+        } finally {
+            isStartingRef.current = false; // [FIX] release the lock either way
         }
     };
 
@@ -254,6 +302,32 @@ export const VoiceClip = ({ sheet, onClose, isDark }) => {
         setTimeRemaining(MAX_RECORD_SECONDS);
     }, [stopPlay]);
 
+    // [FIX CRITICAL] Was: `alert(...)` (crashes on native) + the audio was
+    // never uploaded anywhere. Now uploads via uploadFile() and gives real
+    // user feedback, mirroring the identical fix applied to VideoLab.js.
+    const handlePostVoice = useCallback(async () => {
+        if (!recordedUri || isPosting) return;
+        setIsPosting(true);
+        try {
+            const audioUrl = await uploadFile(recordedUri, 'trend_voice');
+            if (!audioUrl) throw new Error('Upload returned no URL');
+
+            // TODO: wire to the real "create trend post" backend action once it
+            // exists, e.g. useAppStore.getState().createTrendPost({ trend, audioUrl }).
+            // The audio itself is now safely uploaded; only post-creation remains.
+            if (__DEV__) {
+                console.warn(`[VoiceClip] Audio uploaded to ${audioUrl}, but no createTrendPost action is wired yet.`);
+            }
+            Toast.show({ type: 'success', text1: `Dropping ${selectedMod.name} Voice Pulse! 🚀`, text2: 'Your clip is uploading.' });
+            onClose();
+        } catch (error) {
+            if (__DEV__) console.error('[VoiceClip] Post voice failed:', error);
+            Toast.show({ type: 'error', text1: 'Could not post voice clip', text2: 'Please try again.' });
+        } finally {
+            setIsPosting(false);
+        }
+    }, [recordedUri, isPosting, uploadFile, selectedMod, onClose]);
+
     // ── Helpers ───────────────────────────────────────────────────────────
     const formatTime = (secs) => {
         const m = Math.floor(secs / 60);
@@ -264,8 +338,12 @@ export const VoiceClip = ({ sheet, onClose, isDark }) => {
     const isActive = isRecording || isPlaying;
     const maxProgress = isRecording ? (timer / MAX_RECORD_SECONDS) : 0;
 
+    // [FIX] height now computed from the reactive hook value, merged at the
+    // single render call site rather than baked into the static StyleSheet.
+    const dynamicScreenStyle = { height: SCREEN_HEIGHT * 0.85 };
+
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, dynamicScreenStyle]}>
             <SafeAreaView style={{ flex: 1, justifyContent: 'space-between' }}>
 
                 {/* ── HEADER ── */}
@@ -422,6 +500,7 @@ export const VoiceClip = ({ sheet, onClose, isDark }) => {
                             <TouchableOpacity
                                 style={styles.retakeBtn}
                                 onPress={handleRetake}
+                                disabled={isPosting}
                                 accessibilityLabel="Delete recording"
                             >
                                 <Ionicons name="trash-outline" size={18} color="#FF2D55" />
@@ -429,16 +508,23 @@ export const VoiceClip = ({ sheet, onClose, isDark }) => {
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                                style={[styles.postBtn, { backgroundColor: selectedMod.color }]}
-                                onPress={() => {
-                                    // TODO: wire to actual upload service
-                                    alert(`Dropping ${selectedMod.name} Voice Pulse! 🚀`);
-                                    onClose();
-                                }}
+                                style={[
+                                    styles.postBtn,
+                                    { backgroundColor: selectedMod.color },
+                                    isPosting && { opacity: 0.6 },
+                                ]}
+                                onPress={handlePostVoice}
+                                disabled={isPosting}
                                 accessibilityLabel="Post voice clip"
                             >
-                                <Text style={styles.postBtnText}>DROP PULSE</Text>
-                                <Ionicons name="rocket" size={17} color="#000" />
+                                {isPosting ? (
+                                    <ActivityIndicator size="small" color="#000" />
+                                ) : (
+                                    <>
+                                        <Text style={styles.postBtnText}>DROP PULSE</Text>
+                                        <Ionicons name="rocket" size={17} color="#000" />
+                                    </>
+                                )}
                             </TouchableOpacity>
                         </View>
                     )}
@@ -452,7 +538,7 @@ export const VoiceClip = ({ sheet, onClose, isDark }) => {
 // ── Styles ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
     container: {
-        height: SCREEN_HEIGHT * 0.85,
+        // height applied via dynamicScreenStyle at the render call site — see above.
         width: '100%',
         backgroundColor: '#0A0A0C',
         overflow: 'hidden',
@@ -609,9 +695,11 @@ const styles = StyleSheet.create({
     postBtn: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
         paddingHorizontal: 28,
         paddingVertical: 14,
         borderRadius: 24,
+        minWidth: 100,
         gap: 8,
     },
     postBtnText: { color: '#000', fontSize: 13, fontWeight: '900', letterSpacing: 1 },

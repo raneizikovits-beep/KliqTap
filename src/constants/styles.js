@@ -8,12 +8,16 @@ import { authStyles } from './auth.styles';
 import { componentsStyles } from './components.styles';
 
 // --- Final Merge ---
+// NOTE: `overlay` is defined here as the single authoritative source.
+// It was previously also present in componentsStyles, causing a silent key
+// collision where two different backgroundColor/justifyContent values competed.
+// componentsStyles no longer exports `overlay` — this entry wins.
 export const styles = StyleSheet.create({
   ...layoutStyles,
   ...authStyles,
   ...componentsStyles,
-  
-  // ⭐️ Overlay configuration supporting both Native and Web constraints ⭐️
+
+  // ⭐️ Overlay — single authoritative definition (Native + Web) ⭐️
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -21,7 +25,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'center',
     width: '100%',
-    maxWidth: Platform.OS === 'web' ? 540 : '100%', 
+    maxWidth: Platform.OS === 'web' ? 540 : '100%',
   },
 
   // ⭐️ Voice & AI Pulse Animations ⭐️

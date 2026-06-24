@@ -19,7 +19,9 @@ export const NotificationBlock = memo(({ item, onPress }) => {
   );
 });
 
-export const MessageBlock = memo(({ title, body, actions, onAction }) => {
+// ⭐️ FIX: `actions` had no default — actions.map() crashed any caller that
+// rendered this block without an actions array (e.g. a message with no actions).
+export const MessageBlock = memo(({ title, body, actions = [], onAction }) => {
   return (
     <View style={styles.blockCard}>
       <Text style={styles.h2}>{title}</Text>
@@ -34,7 +36,8 @@ export const MessageBlock = memo(({ title, body, actions, onAction }) => {
   );
 });
 
-export const EventBlock = memo(({ title, details, actions, onAction }) => {
+// ⭐️ FIX: same missing default as MessageBlock above.
+export const EventBlock = memo(({ title, details, actions = [], onAction }) => {
   return (
     <View style={styles.blockCard}>
       <Text style={styles.h2}>{title}</Text>

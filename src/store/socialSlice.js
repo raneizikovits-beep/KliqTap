@@ -1,16 +1,8 @@
 // client/src/store/socialSlice.js
-// ⭐️ V18.0 PRODUCTION: Unified Points, No Hardcoded URLs, No Duplicates ⭐️
+// ⭐️ V18.1 PRODUCTION: Added Share Tracking & Optimistic UI for Shares ⭐️
 //
-// שינויים מ-V17.0:
-//   • createComment שוכתב — משתמש ב-SocialService.addComment, תומך בתמונה,
-//     מסיר URL קשיח, optimistic UI עם award() אמיתי במקום toast מטעה.
-//   • toggleFollow / createGroup / fetchMyTickets — נשארים פה כ-source of truth
-//     אבל useAppStore.js לא מספק יותר versions כפולות.
-//   • VALID_VIBES חולץ ל-constant יחיד שניתן לייצא.
-//   • setUserLocation תועבר ל-useAppStore (single source of truth).
-//   • Vibe / Text shuffling ב-createPulse הוסר — חתימה ברורה.
-//   • repostPost מנקה את URLs ההזרים — אם המקור הוא https://, מעבירים אותו כ-imageUrl
-//     ולא כ-imageUri (כדי לא לדחוף ל-FormData).
+// שינויים מ-V18.0:
+//   • repostPost מעודכן — קורא ל-SocialService.trackPostShare ומעדכן את מונה השיתופים (shares) בזמן אמת ב-UI!
 
 import * as Location from 'expo-location';
 import { Alert } from 'react-native';
@@ -56,7 +48,6 @@ export const socialInitialState = {
     supportTickets: [],
     isSupportLoading: false,
 
-    // Renamed to avoid collision with chatSlice.searchResults
     locationSearchResults: [],
     searchItemsData: { Search: [], Support: [] },
     isSearchLoading: false,
@@ -101,8 +92,6 @@ const createSocialSlice = (set, get) => ({
 
     setPostDraftText: (text) => set({ postDraftText: text }),
 
-    // ----- Socket lifecycle (delegates to chatSlice.connectSocket) -----
-    // The actual implementation lives in chatSlice; this is a safety wrapper.
     connectSocket: () => {
         const { user, token, socketId } = get();
         if (!user || !token || socketId) return;
@@ -123,7 +112,6 @@ const createSocialSlice = (set, get) => ({
         }
     },
 
-    // ----- Master refresh -----
     refreshAllData: () => {
         const state = get();
         if (!state.token) return;
@@ -145,7 +133,7 @@ const createSocialSlice = (set, get) => ({
     // ============================================================
     fetchPosts: async (reset = false) => {
         const { hasMorePosts, isPostsLoading } = get();
-        if (isPostsLoading) return;           // dedup
+        if (isPostsLoading) return;           
         if (!reset && !hasMorePosts) return;
 
         set({ isPostsLoading: true });
@@ -159,7 +147,6 @@ const createSocialSlice = (set, get) => ({
             set(state => ({
                 posts: reset ? mappedNewPosts : [...state.posts, ...mappedNewPosts],
                 postsCursor: nextCursor,
-                // Guard: hasMore true but no cursor → stop to avoid infinite loop
                 hasMorePosts: hasMore && nextCursor != null,
                 isPostsLoading: false,
             }));
@@ -184,9 +171,7 @@ const createSocialSlice = (set, get) => ({
                 });
             }
 
-            // Unified points system: only one source of truth
             get().award?.('Create Post');
-
             get().fetchCommunityVibe?.();
             return mappedNewPost;
         } catch (error) {
@@ -195,37 +180,76 @@ const createSocialSlice = (set, get) => ({
         }
     },
 
-    toggleLike: async (postId, isUnliking = false) => {
+    toggleLike: async (postId, isUnliking = false, selectedEmoji = null) => { 
         const sid = String(postId);
         try {
             const updatedPost = isUnliking
                 ? await SocialService.unlikePost(sid)
-                : await SocialService.likePost(sid);
+                : await SocialService.likePost(sid, selectedEmoji); 
 
             get().award?.(isUnliking ? 'Unlike' : 'Like');
 
-            const mappedPost = mapPostAuthor(updatedPost);
+            const updatePost = (p) => {
+                if (String(p.id) !== sid) return p;
+                if (updatedPost) {
+                    const mapped = mapPostAuthor(updatedPost);
+                    return mapped || p; 
+                }
+                const prev = p.stats?.likes ?? 0;
+                return {
+                    ...p,
+                    stats: {
+                        ...p.stats,
+                        likes: isUnliking ? Math.max(0, prev - 1) : prev + 1,
+                        myVibe: isUnliking ? null : (selectedEmoji || '❤️'), 
+                    },
+                };
+            };
+
             set(state => ({
-                posts: state.posts.map(p => String(p.id) === sid ? mappedPost : p),
-                currentGroupPosts: state.currentGroupPosts.map(p => String(p.id) === sid ? mappedPost : p),
+                posts:             state.posts.map(updatePost),
+                currentGroupPosts: state.currentGroupPosts.map(updatePost),
             }));
         } catch (e) {
             safeToast({ type: 'error', text1: 'Error', text2: 'Could not update like status.' });
         }
     },
 
+    // ⭐️ שידרוג השיתופים מתבצע כאן!
     repostPost: async (originalPost) => {
         try {
             const authorData = originalPost?.user || originalPost?.author || {};
             const originalAuthor = authorData.username || authorData.name || 'Unknown';
             const repostText = `🔄 Repost from @${originalAuthor}:\n\n${originalPost.text || ''}`;
-            // NOTE: original.image is typically a remote https URL. Currently we re-upload by
-            // passing the remote URL to createPost; this works on Web (fetch → blob)
-            // and on native (RN downloads via uri). If needed in future, server-side repost
-            // endpoint can avoid the round-trip entirely.
             const imageUri = originalPost.image || originalPost.imageUrl || null;
 
+            // 1. ניצור את הפוסט החדש בפיד של המשתמש
             await get().createPost(repostText, null, imageUri);
+
+            // 2. נדווח לשרת על השיתוף כדי להעלות את המונה ולהוסיף את המשתמש לרשימה!
+            if (originalPost?.id) {
+                await SocialService.trackPostShare(originalPost.id);
+            }
+
+            // 3. נעדכן אופטימית את המספר ב-UI כדי שהמשתמש יראה את המונה קופץ ב-+1 מיד
+            const sid = String(originalPost.id);
+            const updateShareCount = (p) => {
+                if (String(p.id) !== sid) return p;
+                return {
+                    ...p,
+                    stats: {
+                        ...p.stats,
+                        shares: (p.stats?.shares || 0) + 1
+                    }
+                };
+            };
+
+            set(state => ({
+                posts: state.posts.map(updateShareCount),
+                pulses: state.pulses.map(updateShareCount),
+                currentGroupPosts: state.currentGroupPosts.map(updateShareCount),
+            }));
+
             safeToast({ type: 'success', text1: 'Shared!', text2: 'Post shared to your profile.' });
             return true;
         } catch (error) {
@@ -242,7 +266,6 @@ const createSocialSlice = (set, get) => ({
             currentGroupPosts: get().currentGroupPosts,
         };
 
-        // Optimistic removal from ALL feeds
         set(state => ({
             posts:             state.posts.filter(p => String(p.id) !== sid),
             pulses:            state.pulses.filter(p => String(p.id) !== sid),
@@ -275,22 +298,17 @@ const createSocialSlice = (set, get) => ({
     },
 
     // ============================================================
-    // COMMENTS — ⭐️ FIXED: no hardcoded URL, supports image, web-safe
+    // COMMENTS 
     // ============================================================
-    // storeId: the ID used to locate the post/pulse in the local store (may differ from postId when
-    //          postId is the linked Post ID but the store entry has the Pulse ID).
     createComment: async (postId, text, imageUri = null, storeId = null) => {
         if ((!text || !text.trim()) && !imageUri) return false;
-        const sid  = String(postId);           // used for the API call (Post ID)
-        const ssid = String(storeId || postId); // used for store mutation (Pulse ID or Post ID)
+        const sid  = String(postId);           
+        const ssid = String(storeId || postId); 
 
         try {
-            // Uses SocialService → fetchAPI → proper auth/refresh/error flow
             const response = await SocialService.addComment(sid, text?.trim(), imageUri);
-
             if (!response) return false;
 
-            // Build optimistic comment payload from server response + local user
             const me = get().user;
             const optimisticComment = {
                 id: response.id || response._id || `temp-${Date.now()}`,
@@ -303,12 +321,18 @@ const createSocialSlice = (set, get) => ({
                 ...response,
             };
 
-            // Inject into matching post in ALL feeds (posts, pulses, currentGroupPosts).
-            // Match on BOTH ssid (pulse/store ID) and sid (post API ID) to cover all cases.
             const matchId = (p) => String(p.id) === ssid || String(p.id) === sid;
-            const addTo   = (arr) => arr.map(p =>
-                matchId(p) ? { ...p, comments: [...(p.comments || []), optimisticComment] } : p
-            );
+            const addTo   = (arr) => arr.map(p => {
+                if (!matchId(p)) return p;
+                return {
+                    ...p,
+                    comments: [...(p.comments || []), optimisticComment],
+                    stats: {
+                        ...p.stats,
+                        comments: (p.stats?.comments ?? (p.comments?.length ?? 0)) + 1,
+                    },
+                };
+            });
             set(state => ({
                 posts:             addTo(state.posts),
                 pulses:            addTo(state.pulses),
@@ -330,13 +354,18 @@ const createSocialSlice = (set, get) => ({
         const csid  = String(commentId);
         try {
             await SocialService.deleteComment(csid);
-            // Match on BOTH store ID and API post ID
             const removeComment = (arr) =>
-                arr.map(p =>
-                    (String(p.id) === pssid || String(p.id) === psid)
-                        ? { ...p, comments: (p.comments || []).filter(c => String(c.id) !== csid) }
-                        : p
-                );
+                arr.map(p => {
+                    if (!(String(p.id) === pssid || String(p.id) === psid)) return p;
+                    return {
+                        ...p,
+                        comments: (p.comments || []).filter(c => String(c.id) !== csid),
+                        stats: {
+                            ...p.stats,
+                            comments: Math.max(0, (p.stats?.comments ?? (p.comments?.length ?? 1)) - 1),
+                        },
+                    };
+                });
             set(state => ({
                 posts:             removeComment(state.posts),
                 pulses:            removeComment(state.pulses),
@@ -398,8 +427,6 @@ const createSocialSlice = (set, get) => ({
                 return { ...group, isMember, isAdmin };
             });
 
-            // ✅ simple replace — השרת הוא source of truth.
-            // אין merge כדי למנוע "zombie groups" שגורמים ל-Leave failures.
             set({ groups: mappedGroups });
         } catch (e) {
             if (__DEV__) console.warn('[SocialSlice] fetchGroups error:', e?.message);
@@ -435,15 +462,12 @@ const createSocialSlice = (set, get) => ({
         }
     },
 
-    // SINGLE source of truth for createGroup — useAppStore should not override.
     createGroup: async (groupData) => {
         if (!groupData?.name?.trim()) throw new Error('Missing group name');
         const newGroup = await SocialService.createGroup(groupData);
         if (newGroup) {
-            // ✅ הוסף isMember+isAdmin מיד — היוצר הוא תמיד admin ו-member
             const optimisticGroup = { ...newGroup, isMember: true, isAdmin: true };
             set(state => ({ groups: [optimisticGroup, ...state.groups] }));
-            // ✅ fetchGroups (לא fetchExploreData) — מסנכרן groups עם השרת
             get().fetchGroups?.();
             get().fetchExploreData?.();
         }
@@ -493,6 +517,20 @@ const createSocialSlice = (set, get) => ({
     },
 
     // ============================================================
+    // USER FOLLOW
+    // ============================================================
+    toggleFollow: async (userId) => {
+        const sid = String(userId);
+        try {
+            const result = await SocialService.toggleFollow(sid);
+            return result;
+        } catch (e) {
+            if (__DEV__) console.warn('[SocialSlice] toggleFollow error:', e?.message);
+            throw e;
+        }
+    },
+
+    // ============================================================
     // SUPPORT TICKETS
     // ============================================================
     fetchMyTickets: async () => {
@@ -502,7 +540,6 @@ const createSocialSlice = (set, get) => ({
             const tickets = await SocialService.fetchMyTickets();
             set({ supportTickets: tickets || [] });
         } catch (e) {
-            // keep previous tickets, just log
             if (__DEV__) console.warn('[SocialSlice] fetchMyTickets error:', e?.message);
         } finally {
             set({ isSupportLoading: false });
@@ -531,7 +568,6 @@ const createSocialSlice = (set, get) => ({
         }
     },
 
-    // Deterministic signature: (text, imageUri, vibe). No more parameter shuffling.
     createPulse: async (text, imageUri, vibe = 'Neutral') => {
         if (!imageUri) throw new Error('Media is required to create a Pulse.');
 
@@ -542,8 +578,6 @@ const createSocialSlice = (set, get) => ({
             const newPulse = await PulseService.createPulse(actualText, imageUri, actualVibe);
             const me = get().user;
 
-            // Optimistic injection so the home screen renders the pulse immediately,
-            // even if the server response is partial.
             const pulseWithAuthor = {
                 id: newPulse?.id || `temp_${Date.now()}`,
                 vibe: actualVibe,
@@ -576,7 +610,6 @@ const createSocialSlice = (set, get) => ({
         }
     },
 
-    // Backward-compatible alias (preserved from legacy signature).
     submitVibeCheck: async (vibe, imageUri, caption = '') => {
         return get().createPulse(caption, imageUri, vibe);
     },
@@ -650,7 +683,6 @@ const createSocialSlice = (set, get) => ({
                 longitude: location.coords.longitude,
             });
             const cityName = geocode[0]?.city || geocode[0]?.region || 'My Location';
-            // Use the global setUserLocation so the server sync runs once.
             get().setUserLocation?.({
                 name: cityName,
                 latitude: location.coords.latitude,
@@ -668,7 +700,6 @@ const createSocialSlice = (set, get) => ({
                 `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`,
                 {
                     headers: {
-                        // Nominatim policy: identify the client
                         'User-Agent': 'KliqMind/1.0 (support@kliqtap.com)',
                         'Accept': 'application/json',
                     },

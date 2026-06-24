@@ -1,5 +1,20 @@
 // client/src/components/modals/SheetComponents.js
-// ⭐️ V3.5 PRODUCTION: CHROMATIC GRID PALETTE + BULLETPROOF PROP SCANNER ⭐️
+// ⭐️ V3.6 PRODUCTION: CHROMATIC GRID PALETTE + BULLETPROOF PROP SCANNER ⭐️
+//
+// [V3.6 CHANGES — Engineering Audit Fix]:
+//   [FIX CRITICAL] SettingItem only ever destructured flat `icon`/`title`/`body`
+//                  props — but EVERY call site across SheetModals.js (SecondSheet,
+//                  ThirdSheet, FourthSheet, FifthSheet — i.e. the entire Settings/
+//                  Search/Support/ticket drill-down navigation system) invokes it
+//                  as `<SettingItem item={item} onPress={...} isDark={isDark} />`,
+//                  passing the whole item as a SINGLE prop named `item`. Since
+//                  SettingItem never read `props.item`, every single row rendered
+//                  with no icon, no title, and no body — a stack of blank, silent,
+//                  but still-tappable ghost rows across nearly every menu in the app.
+//                  GridItem (right below, in this same file) already had the
+//                  correct "smart scanner" extraction logic for this exact
+//                  calling convention — SettingItem was simply missed when that
+//                  fix was applied. Now mirrors the same pattern.
 
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
@@ -42,7 +57,7 @@ const getGridColors = (title, icon, isDark) => {
     if (combinedText.includes('dance') || combinedText.includes('ריקוד') || combinedText.includes('אתגר') || combinedText.includes('flame')) {
         return { bg: isDark ? 'rgba(255, 94, 0, 0.2)' : '#FFEDE5', color: '#FF5E00' };
     }
-    // סטוジオ צילום / מצלמה
+    // סטודיו צילום / מצלמה
     if (combinedText.includes('photo') || combinedText.includes('studio') || combinedText.includes('צילום') || combinedText.includes('תמונ') || combinedText.includes('camera') || combinedText.includes('image')) {
         return { bg: isDark ? 'rgba(58, 134, 255, 0.2)' : '#EBF2FF', color: '#3A86FF' };
     }
@@ -75,8 +90,24 @@ const getGridColors = (title, icon, isDark) => {
     return getDeterministicColor(combinedText, isDark);
 };
 
-export const SettingItem = ({ icon, title, body, onPress, isDark }) => {
-    const useIonicon = isIoniconName(icon);
+export const SettingItem = (props) => {
+    const { onPress, isDark } = props;
+
+    // [FIX CRITICAL] Mirrors GridItem's existing "smart scanner" below — every
+    // call site across SheetModals.js passes `item={item}`, not flat props.
+    // Falls back to flat icon/title/body props too, so this stays backward
+    // compatible with any caller that DOES pass them directly.
+    let finalIcon  = props.icon  || '';
+    let finalTitle = props.title || '';
+    let finalBody  = props.body  || '';
+
+    if (props.item && typeof props.item === 'object') {
+        finalIcon  = props.item.icon  || finalIcon;
+        finalTitle = props.item.title || props.item.label || props.item.text || props.item.name || finalTitle;
+        finalBody  = props.item.body  || props.item.subtitle || props.item.description || finalBody;
+    }
+
+    const useIonicon = isIoniconName(finalIcon);
 
     return (
         <TouchableOpacity 
@@ -89,16 +120,16 @@ export const SettingItem = ({ icon, title, body, onPress, isDark }) => {
         >
             <View style={[styles.iconBox, { backgroundColor: isDark ? '#333' : '#F5F7FA' }]}>
                 {useIonicon ? (
-                    <Ionicons name={icon} size={22} color={isDark ? '#4DA8DA' : brand.blue} />
+                    <Ionicons name={finalIcon} size={22} color={isDark ? '#4DA8DA' : brand.blue} />
                 ) : (
-                    <Text style={styles.emojiIcon}>{icon}</Text>
+                    <Text style={styles.emojiIcon}>{finalIcon}</Text>
                 )}
             </View>
 
             <View style={styles.textContainer}>
-                <Text style={[styles.itemTitle, { color: isDark ? '#fff' : '#333' }]}>{title}</Text>
-                {body ? (
-                    <Text style={[styles.itemBody, { color: isDark ? '#aaa' : '#888' }]} numberOfLines={1}>{body}</Text>
+                <Text style={[styles.itemTitle, { color: isDark ? '#fff' : '#333' }]}>{finalTitle}</Text>
+                {finalBody ? (
+                    <Text style={[styles.itemBody, { color: isDark ? '#aaa' : '#888' }]} numberOfLines={1}>{finalBody}</Text>
                 ) : null}
             </View>
 

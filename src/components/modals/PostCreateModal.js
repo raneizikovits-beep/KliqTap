@@ -21,6 +21,7 @@ import Toast from 'react-native-toast-message';
 
 import * as Data from '../../constants/data';
 import { useAppStore } from '../../store/useAppStore'; 
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
 
 const { width, height: screenHeight } = Dimensions.get('window');
 
@@ -40,7 +41,6 @@ const FONTS = [
     'serif', 'monospace', 'sans-serif', 'cursive'
 ];
 
-// 🚀 החזרנו את המשתנים postImageUri ו-imageUri לשורת הפונקציה 🚀
 export function PostCreateModal({ visible, onClose, postToEdit = null, preSelectedImageUri = null, postImageUri = null, imageUri = null }) {
   
   const { createPost, editPost, userSettings } = useAppStore(state => ({
@@ -59,6 +59,9 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
   const [isPosting, setIsPosting] = useState(false);
   const [isDragging, setIsDragging] = useState(false); 
   const [isCaptionFocused, setIsCaptionFocused] = useState(false); 
+
+  const [mediaAssets, setMediaAssets] = useState([]);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
   const [textColor, setTextColor] = useState(COLORS[0]);
   const [textSize, setTextSize] = useState(32);
@@ -108,10 +111,11 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
 
   useEffect(() => {
      if (visible) {
-          // 🚀 התיקון המדויק - קליטה מכל המקורות האפשריים:
           const incomingUri = postImageUri || imageUri || preSelectedImageUri || null;
           
           setLocalImageUri(incomingUri);
+          setMediaAssets(incomingUri ? [{ uri: incomingUri, type: 'image' }] : []);
+          setActiveMediaIndex(0);
           setCaption(postToEdit ? postToEdit.text : '');
           setOverlayText('');
           setTextColor(COLORS[0]);
@@ -166,6 +170,12 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
         let finalCaption = caption.trim();
         const overlayTrimmed = overlayText.trim();
         
+        const postType = isVideo ? 'video'
+            : finalMediaUri ? 'image'
+            : overlayTrimmed ? 'text_canvas'
+            : 'text';
+        trackEvent('content_published', { postType, isVideo, hasTextOverlay: !!overlayTrimmed, mediaCount: mediaAssets.length });
+
         if (Platform.OS === 'web' && overlayTrimmed && !localImageUri) {
             finalCaption = finalCaption
                 ? `${finalCaption}\n\n${overlayTrimmed}`
@@ -233,19 +243,24 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
                Alert.alert("Permission needed", "Gallery access is required.");
                return;
            }
+           
+           // ⭐️ תיקון: הגבלנו לבחירת תמונה בודדת ופתחנו את החיתוך
            let result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.All, 
-              allowsEditing: false, 
+              mediaTypes: ImagePicker.MediaTypeOptions.All,
+              allowsMultipleSelection: false,
+              allowsEditing: true, 
               quality: 0.8,
            });
+           
            if (!result.canceled && result.assets?.length > 0) {
-               const asset = result.assets[0];
-               setLocalImageUri(asset.uri);
-               setIsVideo(asset.type === 'video' || asset.uri.endsWith('.mp4') || asset.uri.endsWith('.mov'));
-               setOverlayText(''); 
-               
-               if (asset.type === 'image' && asset.width > 0 && asset.height > 0) {
-                 setImageAspectRatio(asset.width / asset.height);
+               const first = result.assets[0];
+               setMediaAssets([first]); // שומרים רק אחת
+               setActiveMediaIndex(0);
+               setLocalImageUri(first.uri);
+               setIsVideo(first.type === 'video' || first.uri.endsWith('.mp4') || first.uri.endsWith('.mov'));
+               setOverlayText('');
+               if (first.type === 'image' && first.width > 0 && first.height > 0) {
+                   setImageAspectRatio(first.width / first.height);
                }
            }
        } catch (error) { 
@@ -363,8 +378,15 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
                               </ViewShot>
                           )}
                           
+                          {/* ⭐️ תיקון הפח האדום - מנקה עכשיו גם את הזיכרון */}
                           {!isEditingOverlay && (
-                              <TouchableOpacity style={localStyles.removeMediaBtn} onPress={() => { setLocalImageUri(null); setOverlayText(''); }}>
+                              <TouchableOpacity style={localStyles.removeMediaBtn} onPress={() => { 
+                                  setLocalImageUri(null); 
+                                  setMediaAssets([]); 
+                                  setActiveMediaIndex(0);
+                                  setOverlayText(''); 
+                                  setIsVideo(false);
+                              }}>
                                   <Ionicons name="trash" size={20} color="#fff" />
                               </TouchableOpacity>
                           )}
@@ -414,7 +436,7 @@ export function PostCreateModal({ visible, onClose, postToEdit = null, preSelect
                         </View>
                     ) : (
                         <View style={localStyles.mainTools}>
-                            
+
                             {!localImageUri && !isEditingOverlay ? (
                                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={localStyles.colorPicker}>
                                     {TEXT_ONLY_BACKGROUNDS.map((bg, i) => (
@@ -552,5 +574,5 @@ const localStyles = StyleSheet.create({
     dockLabel: { fontSize: 10, fontWeight: '600' },
     
     submitActionBtn: { backgroundColor: Data.brand.blue || '#007AFF', marginLeft: 'auto', paddingHorizontal: 16, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-    submitActionText: { color: '#fff', fontWeight: 'bold', fontSize: 15 }
+    submitActionText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
 });

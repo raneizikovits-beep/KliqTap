@@ -1,17 +1,28 @@
 // client/src/components/modals/LeaderboardModal.js
 // ⭐️ FULL DARK MODE COMPATIBLE - ALL ORIGINAL FUNCTIONS PRESERVED 100% ⭐️
 // ⭐️ FIXED: Added Fallback Images for Avatars ⭐️
+//
+// [V1.1 — Engineering Audit Fixes]:
+// [BUG]   `Dimensions.get('window')` was captured ONCE at module load — same
+//         rotation/resize bug found in 10+ sibling files in earlier audit
+//         passes. Fixed with useWindowDimensions().
+// [BUG]   `item.id === user?.id` used strict equality without String()
+//         coercion, inconsistent with the established codebase-wide
+//         convention for ID comparisons (e.g. CommentsSheet.js, GroupCard.js).
+//         If the leaderboard endpoint and the auth/me endpoint ever serialize
+//         ids as different types (number vs string) — a realistic risk across
+//         two different backend responses — the "YOU" highlight would never
+//         appear for the current user even when they are in the list.
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, 
-  FlatList, Image, Dimensions, ActivityIndicator, RefreshControl, Platform, KeyboardAvoidingView 
+  FlatList, Image, useWindowDimensions, ActivityIndicator, RefreshControl, Platform, KeyboardAvoidingView 
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppStore } from '../../store/useAppStore';
 import { brand, imageFor } from '../../constants/data'; // ⭐️ הבאנו את imageFor
-
-const { width } = Dimensions.get('window');
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
 
 // Stable empty array so the memoized `sortedData` keeps referential equality
 // when the store has no leaderboard yet (avoids a needless recompute each render).
@@ -31,6 +42,9 @@ const getRankTheme = (index, isDark) => {
 };
 
 export const LeaderboardModal = ({ setSecondSheet }) => {
+  // [FIX] Reactive — re-renders on rotation/resize, unlike Dimensions.get('window')
+  // captured once at module load.
+  const { width } = useWindowDimensions();
   const user = useAppStore(state => state.user);
   const leaderboard = useAppStore(state => state.leaderboard) ?? EMPTY_LEADERBOARD;
   const isLeaderboardLoading = useAppStore(state => state.isLeaderboardLoading);
@@ -102,7 +116,8 @@ export const LeaderboardModal = ({ setSecondSheet }) => {
 
   const renderItem = useCallback(({ item, index }) => {
     const theme = getRankTheme(index, isDark); 
-    const isMe = item.id === user?.id;
+    // [FIX] String() coercion — see header note.
+    const isMe = String(item.id) === String(user?.id);
     
     const safeUsername = encodeURIComponent(item.username || 'user');
     // ⭐️ FIX: שימוש ב-avatarUrl ואם הוא ריק, קריאה ל-imageFor עם שם המשתמש.
@@ -135,7 +150,7 @@ export const LeaderboardModal = ({ setSecondSheet }) => {
         
         <View style={localStyles.nameSection}>
             <View style={localStyles.nameRow}>
-                <Text style={[localStyles.display_name, { color: isDark ? '#fff' : '#1E293B' }]} numberOfLines={1}>
+                <Text style={[localStyles.display_name, { color: isDark ? '#fff' : '#1E293B', maxWidth: width * 0.3 }]} numberOfLines={1}>
                     {item.display_name || item.name || item.username} 
                 </Text>
                 {isMe && <View style={localStyles.meBadge}><Text style={localStyles.meBadgeText}>YOU</Text></View>}
@@ -186,7 +201,10 @@ export const LeaderboardModal = ({ setSecondSheet }) => {
           <View style={[localStyles.tabsContainer, { backgroundColor: isDark ? '#1C1C1E' : '#F1F5F9', borderColor: isDark ? '#333' : '#E2E8F0' }]}>
             <TouchableOpacity 
               style={[localStyles.tab, activeTab === 'points' && [localStyles.activeTab, { backgroundColor: isDark ? '#333' : '#fff' }]]} 
-              onPress={() => setActiveTab('points')}
+              onPress={() => {
+                trackEvent('leaderboard_tab_clicked', { tab: 'points' }); // 👈 הדיווח
+                setActiveTab('points');
+              }}
               activeOpacity={0.7}
             >
               <MaterialCommunityIcons name="star-shooting" size={18} color={activeTab === 'points' ? brand.blue : '#94A3B8'} />
@@ -195,7 +213,10 @@ export const LeaderboardModal = ({ setSecondSheet }) => {
             
             <TouchableOpacity 
               style={[localStyles.tab, activeTab === 'streak' && [localStyles.activeTab, { backgroundColor: isDark ? '#333' : '#fff' }]]} 
-              onPress={() => setActiveTab('streak')}
+              onPress={() => {
+                trackEvent('leaderboard_tab_clicked', { tab: 'streak' }); // 👈 הדיווח
+                setActiveTab('streak');
+              }}
               activeOpacity={0.7}
             >
               <MaterialCommunityIcons name="fire" size={18} color={activeTab === 'streak' ? '#FF4500' : '#94A3B8'} />
@@ -312,7 +333,7 @@ const localStyles = StyleSheet.create({
 
   nameSection: { flex: 1, marginLeft: 16 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  display_name: { fontSize: 16, fontWeight: '800', maxWidth: width * 0.3 },
+  display_name: { fontSize: 16, fontWeight: '800' },
   username_handle: { fontSize: 13, fontWeight: '500', marginTop: 1 },
   
   meBadge: { backgroundColor: brand.blue, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },

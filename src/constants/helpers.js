@@ -55,7 +55,7 @@ export function deepItems(kind, arg) {
         { i: "🧭", t: "Advanced Explore", body: "Open related tools and filters.", next: "fourth" },
         { i: "🧱", t: "Customize Blocks", body: "Add/remove content blocks to your page.", next: "fifth" },
         { i: "🧰", t: "Utilities Toolkit", body: "Useful quick utilities here (e.g., timer, notes).", next: "fifth" },
-        { i: "🔑", t: "Session Key", body: "Request temporary access key.", next: "fifth:SessionKey" },
+        { i: "🔑", t: "Session Key", body: "Request temporary access key.", next: "fifth:SessionKey", requiresRole: 'admin' },
         { i: "🖨️", t: "Print View", body: "Optimize content for printing/PDF.", next: "fifth" },
         { i: "💡", t: "Smart Tips", body: "Contextual advice based on current view.", next: "fifth" },
         { i: "🔄", t: "Sync Data", body: "Force data synchronization.", next: "fifth" },
@@ -68,7 +68,7 @@ export function deepItems(kind, arg) {
         { i: "📝", t: "Feedback Loop", body: "Send private feedback to the team.", next: "fifth" },
         { i: "📊", t: "Usage Stats", body: "View your activity dashboard.", next: "fifth" },
         { i: "💸", t: "Billing & Plans", body: "Manage subscription details.", next: "fifth" },
-        { i: "🧑‍💻", t: "Dev Tools", body: "Open developer console (hidden feature).", next: "fifth:DevTools" },
+        { i: "🧑‍💻", t: "Dev Tools", body: "Open developer console (hidden feature).", next: "fifth:DevTools", requiresRole: 'admin' },
         { i: "🔗", t: "External Links", body: "Links to Privacy/Terms pages.", next: "fifth" },
       ];
     case "call":
@@ -97,9 +97,9 @@ export function deepItems(kind, arg) {
     case "fifth:Membership":
       return [{ i: "💳", t: "Upgrade Plan", body: "View and upgrade membership options.", actionType: 'UpgradePlan', targetId: 'billing_page' }];
     case "fifth:DevTools":
-      return [{ i: "🐛", t: "Open Debug Console", body: "Accessing development and debug logs.", actionType: 'OpenDevConsole', targetId: 'dev_logs' }];
+      return [{ i: "🐛", t: "Open Debug Console", body: "Accessing development and debug logs.", actionType: 'OpenDevConsole', targetId: 'dev_logs', requiresRole: 'admin' }];
     case "fifth:SessionKey":
-      return [{ i: "🔒", t: "Generate One-Time Key", body: "Generate a secure, short-lived session key for external login.", actionType: 'GenerateSessionKey', targetId: 'api_key_gen' }];
+      return [{ i: "🔒", t: "Generate One-Time Key", body: "Generate a secure, short-lived session key for external login.", actionType: 'GenerateSessionKey', targetId: 'api_key_gen', requiresRole: 'admin' }];
     case "fifth:AISummary":
       return [{ i: "🤖", t: "Start AI Summary", body: "AI is processing the latest activity...", actionType: 'StartAISummary', targetId: arg?.t }];
     default:

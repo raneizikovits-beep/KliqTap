@@ -1,5 +1,15 @@
 // client/src/components/modals/SheetViews.js
-// ⭐️ V3.0 PRODUCTION: CommentsView now connects to real store when postId is provided.
+// ⭐️ V3.1 PRODUCTION: CommentsView now connects to real store when postId is provided.
+//
+// [V3.1 — Engineering Audit Fix]:
+// [BUG]   TrendOptionsView's handleAction default ('photo') branch — used by 6
+//         of the 10 TREND_ACTIONS (task, ootd, food, pet, gym, travel) — showed
+//         "Opening gallery for X..." but never actually opened anything. This
+//         claimed an action that didn't happen. There's no onStartImageUpload
+//         (or equivalent) wired into this component to make it real, and
+//         inventing that wiring without a confirmed call signature risked
+//         introducing a different bug. Reworded to be honest about the
+//         current state instead of implying false functionality.
 //
 // CRITICAL FIX IN THIS VERSION:
 // [FIX-COMMENTS] CommentsView used to ignore its postId prop and always render
@@ -13,8 +23,15 @@
 //                    both the demo shape ({user, time, ...}) and the server shape
 //                    ({username, timestamp, userId, ...})
 //
-// All other views (PulseCreationOptionsView, TrendOptionsView, LocationPickerView,
+// All other views (PulseCreationOptionsView, LocationPickerView,
 // GroupInfoPeekView) and ALL styles are preserved 100%.
+//
+// [Dead code note — flagged, not removed per "touch only if needed"]:
+// TOP_CREATORS and its 8 associated styles (leaderboardHeader, creatorsScroll,
+// creatorItem, creatorCircle, firstPlace, rankBadge, rankText, creatorName) are
+// defined but never rendered anywhere in this file. This is very likely the
+// missing other half of the broken LeaderboardModal reference found in
+// SheetModals.js — see that file's audit notes.
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { 
@@ -131,7 +148,11 @@ export const TrendOptionsView = ({ trendName, onClose, openVibeCheck, openVoiceC
             } else if (item.action === 'live' && openVoiceCall) {
                 openVoiceCall(`trend_${item.id}_${Date.now()}`);
             } else {
-                Alert.alert(item.title, `Opening gallery for ${item.title}...`);
+                // [FIX] Was "Opening gallery for X..." which implied a gallery
+                // would open — it never did. This covers 6 of the 10 TREND_ACTIONS
+                // (task, ootd, food, pet, gym, travel). Honest wording until a real
+                // onStartImageUpload-style flow is wired in for these actions.
+                Alert.alert(item.title, `${item.title} is coming soon!`);
             }
         }, 300);
     };

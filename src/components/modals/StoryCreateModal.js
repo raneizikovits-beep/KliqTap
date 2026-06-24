@@ -32,6 +32,12 @@
  * [DESIGN] Full dark-mode polish: consistent with other KLIQ sheets.
  *          Text input now centered over the image with draggable positioning stub.
  *          Gradient footer so controls don't fight the image.
+ *
+ * [V1.1 — Engineering Audit Fix]:
+ * [BUG]   `Dimensions.get('window')` was captured ONCE at module load and baked
+ *         into the sheet's height — the same rotation/resize bug found in
+ *         TopicChat.js, VideoLab.js, and VoiceClip.js in an earlier audit pass.
+ *         Fixed with the reactive useWindowDimensions() hook.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
@@ -40,7 +46,7 @@ import {
     Modal, View, Text, TouchableOpacity,
     TextInput, ImageBackground, ActivityIndicator,
     KeyboardAvoidingView, Platform, SafeAreaView,
-    StyleSheet, Dimensions,
+    StyleSheet, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 // Zustand shallow import — keep optional so file is portable
@@ -49,8 +55,6 @@ try { ({ shallow } = require('zustand/shallow')); } catch (_) {}
 
 import { brand } from '../../constants/data';
 import { useAppStore } from '../../store/useAppStore';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ── Safe fallbacks for brand constants ───────────────────────────────────
 const BRAND_BLUE = brand?.blue  || '#3A86FF';
@@ -62,6 +66,10 @@ const MAX_OVERLAY_TEXT = 120;
 // ─────────────────────────────────────────────────────────────────────────
 export const StoryCreateModal = ({ visible, onClose, imageUri, onSubmit, isPosting }) => {
     const [text, setText] = useState('');
+
+    // [FIX] Reactive — re-renders on rotation/resize, unlike Dimensions.get('window')
+    // captured once at module load.
+    const { height: SCREEN_HEIGHT } = useWindowDimensions();
 
     // Zustand selector — use shallow equality to prevent re-render loop
     const isDark = useAppStore(
@@ -95,7 +103,7 @@ export const StoryCreateModal = ({ visible, onClose, imageUri, onSubmit, isPosti
             <View style={localStyles.backdrop}>
                 <KeyboardAvoidingView
                     behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    style={localStyles.sheet}
+                    style={[localStyles.sheet, { height: SCREEN_HEIGHT * 0.92 }]}
                 >
                     <SafeAreaView style={{ flex: 1 }}>
 
@@ -217,7 +225,7 @@ const localStyles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     sheet: {
-        height: SCREEN_HEIGHT * 0.92,
+        // height applied via inline style merge at the render call site — see above.
         backgroundColor: '#0A0A0C',
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,

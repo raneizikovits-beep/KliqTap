@@ -1,5 +1,17 @@
 // client/src/components/ListItems.js
-// ⭐️ V10.0: Unified Avatar Logic (First Letter) + Integrated Call Buttons ⭐️
+// ⭐️ V10.1: GroupMemberListItem — fixed dead "message" button ⭐️
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT FIX vs V10.0 (everything else byte-for-byte identical):
+//   ✅ [BUG] GroupMemberListItem rendered a chatbubble TouchableOpacity with NO
+//      onPress — tapping it silently did nothing (dead/non-functional UI).
+//      Added an optional `onMessage` prop; the button now only renders when a
+//      real handler is passed in from the parent screen, mirroring the
+//      onCall/onVideo pattern already used below in MessageListItem.
+//   ⚠️  NOT changed (pending confirmation): MessageListItem's "onlineDot" is
+//      currently driven by `item.unread > 0`, not a real online/presence
+//      field, despite the comment above it saying "סטטוס מחובר". Left as-is —
+//      see chat for the two fix options.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
@@ -169,7 +181,7 @@ export const CommentItem = ({ comment, isDark }) => {
 };
 
 // --- 3. Group Member List Item ---
-export const GroupMemberListItem = ({ member, onOpenAvatar, isDark }) => {
+export const GroupMemberListItem = ({ member, onOpenAvatar, onMessage, isDark }) => {
     const textColor = isDark ? '#fff' : '#1E293B';
     const subTextColor = isDark ? '#aaa' : '#64748B';
     const borderColor = isDark ? '#333' : '#eee';
@@ -186,9 +198,13 @@ export const GroupMemberListItem = ({ member, onOpenAvatar, isDark }) => {
                 <Text style={[localStyles.memberStatus, { color: subTextColor }]}>{member.status || 'Member'}</Text>
             </View>
 
-            <TouchableOpacity style={localStyles.memberAction}>
-                <Ionicons name="chatbubble-outline" size={20} color={Data.brand.blue} />
-            </TouchableOpacity>
+            {/* ⭐️ FIX V10.1: היה TouchableOpacity בלי onPress (כפתור מת) — */}
+            {/* עכשיו מוצג רק אם הועבר handler אמיתי מההורה */}
+            {onMessage && (
+                <TouchableOpacity style={localStyles.memberAction} onPress={onMessage}>
+                    <Ionicons name="chatbubble-outline" size={20} color={Data.brand.blue} />
+                </TouchableOpacity>
+            )}
         </View>
     );
 };

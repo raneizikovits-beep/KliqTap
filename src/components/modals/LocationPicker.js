@@ -10,6 +10,14 @@
 //   [FIX-4] Reverse-geocoding wrapped in try/catch — never blocks location set
 //   [FIX-5] Removed potential render-time crash if userSettings is undefined
 //   [FIX-6] Memoized location list creation
+//
+// [V5.1 — Engineering Audit Fix]:
+//   [FIX-7] handleSelectLocation called setUserLocation(...) UNCONDITIONALLY,
+//           even for a "custom search, no GPS match" entry with null
+//           coordinates — meaning the global userLocation.name got overwritten
+//           with a useless/misleading label before the no-coordinates alert
+//           and early-return. Reordered so the validity check runs first;
+//           an unusable entry now never touches global state at all.
 // ─────────────────────────────────────────────────────────────────────
 
 import React, { useState, useMemo, useCallback } from 'react';
@@ -202,21 +210,22 @@ export default function LocationPicker({ onClose }) {
 
     // ── Manual selection — now always carries lat/lon ───────────────
     const handleSelectLocation = useCallback((loc) => {
-        // [FIX-1] Pass real coordinates so the radar works
-        setUserLocation({
-            latitude: loc.latitude ?? null,
-            longitude: loc.longitude ?? null,
-            name: loc.name,
-        });
-
+        // [FIX-7] Check validity BEFORE mutating global state — an unusable
+        // "no GPS match" entry must never overwrite userLocation.name.
         if (loc.latitude == null && loc.id === 'custom_search') {
-            // Custom search without coords — alert the user before closing
             Alert.alert(
                 'No coordinates for this place',
                 'Try one of the popular cities, or use GPS for your exact location.',
             );
             return;
         }
+
+        // [FIX-1] Pass real coordinates so the radar works
+        setUserLocation({
+            latitude: loc.latitude ?? null,
+            longitude: loc.longitude ?? null,
+            name: loc.name,
+        });
         onClose?.();
     }, [setUserLocation, onClose]);
 

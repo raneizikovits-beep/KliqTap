@@ -79,7 +79,9 @@ const SearchSheet = ({ onClose, setThirdSheet, setProfilePeek, openChat, isDark 
                         icon:  '👤',
                         title: u.name || u.username || 'Unknown User',
                         body:  u.username ? `@${u.username}` : '',
-                        id:    u.id != null ? String(u.id) : `user-${i}`,
+                        // ⭐️ [FIX] Prefix with 'user-' to prevent key collision when
+                        // a user and a group share the same numeric id in the same FlatList.
+                        id:    u.id != null ? `user-${String(u.id)}` : `user-fb-${i}`,
                         data:  u,
                     });
                 });
@@ -93,7 +95,8 @@ const SearchSheet = ({ onClose, setThirdSheet, setProfilePeek, openChat, isDark 
                         icon:  '👥',
                         title: g.name || 'Unnamed Group',
                         body:  g.description || `${g.memberCount || 0} members`,
-                        id:    g.id != null ? String(g.id) : `group-${i}`,
+                        // ⭐️ [FIX] Prefix with 'group-' for same reason.
+                        id:    g.id != null ? `group-${String(g.id)}` : `group-fb-${i}`,
                         data:  g,
                     });
                 });

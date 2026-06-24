@@ -94,6 +94,7 @@ const CompactGroupCard = React.memo(({
   onLeave,
   onEdit,
   onDelete,
+  onReport,
   isDark,
   isOwner,
 }) => {
@@ -179,6 +180,9 @@ const CompactGroupCard = React.memo(({
             isDark={isDark}
           />
         )}
+        {/* Report removed from list view — accessible inside the tribe instead.
+            Showing a red flag before the user even enters the community is
+            premature and creates visual noise in the list. */}
       </View>
     </TouchableOpacity>
   );
@@ -359,6 +363,35 @@ export default function TribesScreen({ setSecondSheet, setGroupModalTab }) {
 
   // ─── renderItem (stable — all handlers are useCallback) ────────────
   const renderItem = useCallback(({ item }) => {
+    const _submitSecurityReport = async (reportedId, reason) => {
+      if (!reportedId) return false;
+      try {
+        const token = useAppStore.getState?.()?.token;
+        if (!token) return false;
+        const resp = await fetch('https://api.kliqtap.com/security/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ reportedId: String(reportedId), reason }),
+        });
+        return resp.ok;
+      } catch { return false; }
+    };
+
+    const handleReportGroup = (group) => {
+      const ownerId = group.ownerId || group.createdBy || group.adminId;
+      Alert.alert(
+        'Report Community',
+        `Why are you reporting "${group.name}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: '🚫 Spam or fake community',    onPress: async () => { const ok = await _submitSecurityReport(ownerId, 'spam'); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this community.' : 'Could not submit. Try again.'); } },
+          { text: '💊 Illegal activity',           onPress: async () => { const ok = await _submitSecurityReport(ownerId, 'illegal_activity'); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this community.' : 'Could not submit. Try again.'); } },
+          { text: '😤 Harassment or hate speech',  onPress: async () => { const ok = await _submitSecurityReport(ownerId, 'harassment'); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this community.' : 'Could not submit. Try again.'); } },
+          { text: '🔞 Inappropriate content',      onPress: async () => { const ok = await _submitSecurityReport(ownerId, 'inappropriate_content'); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this community.' : 'Could not submit. Try again.'); } },
+        ],
+      );
+    };
+
     const isOwner =
       item.ownerId === user?.id ||
       item.created_by === user?.id;
@@ -367,6 +400,7 @@ export default function TribesScreen({ setSecondSheet, setGroupModalTab }) {
       <CompactGroupCard
         group={item}
         isOwner={isOwner}
+        onReport={!isOwner ? () => handleReportGroup(item) : undefined}
         isDark={isDark}
         onJoin={() => handleJoinGroup(item)}
         onLeave={() => handleLeaveGroup(item)}

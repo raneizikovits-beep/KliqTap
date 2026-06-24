@@ -1,5 +1,5 @@
 // client/src/screens/SupportScreen.js
-// ⭐️ V5 PREMIUM FOCUS MODE: Powerful Animations, Auras, Pull-to-Refresh, & Glass UI
+// ⭐️ V5.2 PREMIUM FOCUS MODE: Powerful Animations, Auras, Pull-to-Refresh, & Glass UI
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
@@ -8,10 +8,12 @@ import {
   PanResponder, KeyboardAvoidingView, Platform, RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons'; 
+import { Audio } from 'expo-av';
 import { styles as globalStyles } from '../constants/styles';
 import * as Data from '../constants/data'; 
 import { useAppStore } from '../store/useAppStore'; 
 import * as Haptics from 'expo-haptics'; 
+import { trackEvent } from '../utils/analytics';
 
 const { width } = Dimensions.get('window');
 
@@ -24,11 +26,11 @@ const safeHapticNotify = async (type) => {
 };
 
 const MOODS = [
-  { id: 'stress', icon: '😰', label: 'Stressed', color: '#FFD166' },
-  { id: 'sad', icon: '😔', label: 'Down', color: '#118AB2' },
-  { id: 'anxious', icon: '🌩️', label: 'Anxious', color: '#EF476F' },
-  { id: 'angry', icon: '😤', label: 'Angry', color: '#E76F51' },
-  { id: 'neutral', icon: '😐', label: 'Okay', color: '#06D6A0' },
+  { id: 'great',    icon: '😄', label: 'Great', color: '#10B981' },
+  { id: 'good',     icon: '🙂', label: 'Good',  color: '#3B82F6' },
+  { id: 'okay',     icon: '😐', label: 'Okay',  color: '#F59E0B' },
+  { id: 'down',     icon: '😔', label: 'Down',  color: '#8B5CF6' }, 
+  { id: 'rough',    icon: '😞', label: 'Rough', color: '#EF4444' }, 
 ];
 
 const SOUND_TRACKS = [
@@ -38,6 +40,13 @@ const SOUND_TRACKS = [
   { id: 'fire', name: 'Fire', icon: '🔥' },
   { id: 'off', name: 'Off', icon: '🔇' },
 ];
+
+const SOUND_FILES = {
+  rain:   require('../assets/sounds/rain.mp3'),
+  forest: require('../assets/sounds/forest.mp3'),
+  waves:  require('../assets/sounds/waves.mp3'),
+  fire:   require('../assets/sounds/fire.mp3'),
+};
 
 const AFFIRMATIONS = [
     "You are stronger than you know.",
@@ -61,16 +70,18 @@ const getScreenTitle = (tool) => {
 };
 
 export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) {
-  const { streak, award, userSettings } = useAppStore(state => ({
+  const { streak, award, userSettings, logMood, todayMood } = useAppStore(state => ({
     streak: state.streak || 0,
     award: state.award,
-    userSettings: state.userSettings
+    userSettings: state.userSettings,
+    logMood: state.logMood,
+    todayMood: state.todayMood
   }));
 
   const isDark = userSettings?.darkMode === true;
   const focusTool = sheet?.tool; 
   
-  const [selectedMood, setSelectedMood] = useState('neutral');
+  const [selectedMood, setSelectedMood] = useState(null);
   const [affirmation, setAffirmation] = useState(AFFIRMATIONS[0]);
   const [isBreathing, setIsBreathing] = useState(false);
   const [breathePhase, setBreathePhase] = useState('Ready');
@@ -81,13 +92,30 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
   const [energyLevel, setEnergyLevel] = useState(50);
   const [refreshing, setRefreshing] = useState(false);
 
-  // --- Animations ---
   const breathScale = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const pan = useRef(new Animated.ValueXY()).current;
   const entranceAnim = useRef(new Animated.Value(40)).current; 
   const entranceOpacity = useRef(new Animated.Value(0)).current;
   const soundPulseAnim = useRef(new Animated.Value(1)).current;
+  
+  const activeSoundIdRef = useRef('off');
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    if (todayMood) {
+        setSelectedMood(todayMood);
+    }
+  }, [todayMood]);
+
+  useEffect(() => {
+    activeSoundIdRef.current = activeSoundId;
+  }, [activeSoundId]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const handleClose = useCallback(() => {
     if (setThirdSheet) setThirdSheet(null);
@@ -101,7 +129,6 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
       setAffirmation(next);
   }, [affirmation]);
 
-  // Pull to refresh
   const onRefresh = useCallback(() => {
       setRefreshing(true);
       safeHaptic(Haptics.ImpactFeedbackStyle.Medium);
@@ -124,7 +151,6 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
     })
   ).current;
 
-  // Entrance Animation
   useEffect(() => {
       Animated.parallel([
           Animated.timing(entranceAnim, { toValue: 0, duration: 600, easing: Easing.out(Easing.exp), useNativeDriver: true }),
@@ -135,12 +161,12 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
       if (focusTool === 'breathe') setTimeout(() => setIsBreathing(true), 600);
   }, [focusTool]);
 
-  // Breathing Loop with phases
   useEffect(() => {
     let loop;
     let hapticInterval;
 
     if (isBreathing) {
+      trackEvent('breathe_tool_started');
       loop = Animated.loop(
         Animated.sequence([
           Animated.timing(breathScale, { toValue: 1.5, duration: 4000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -174,7 +200,6 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
     };
   }, [isBreathing, breathScale]);
 
-  // Active Sound Pulsing
   useEffect(() => {
       let pulseLoop;
       if (activeSoundId !== 'off') {
@@ -198,15 +223,42 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
   }, [sound]);
 
   const handlePlaySound = useCallback(async (trackId) => {
-    setActiveSoundId(trackId);
     safeHapticNotify(Haptics.NotificationFeedbackType.Success);
+    setActiveSoundId(trackId);
+
+    if (trackId === 'off') {
+      setSound(null);
+      trackEvent('soundscape_played', { track: 'off' });
+      return;
+    }
+
+    try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        SOUND_FILES[trackId],
+        { isLooping: true, volume: 0.6, shouldPlay: true }
+      );
+
+      if (!isMountedRef.current || activeSoundIdRef.current !== trackId) {
+        newSound.unloadAsync().catch(() => {});
+        return;
+      }
+
+      setSound(newSound);
+      trackEvent('soundscape_played', { track: trackId });
+    } catch (e) {
+      console.warn('[SupportScreen] Soundscape playback failed:', e);
+      if (isMountedRef.current) setActiveSoundId('off');
+    }
   }, []);
 
   const handleShredWorry = useCallback(() => {
       if(!worryText.trim()) return;
       Animated.timing(fadeAnim, { toValue: 0, duration: 1000, useNativeDriver: true }).start(() => {
           safeHapticNotify(Haptics.NotificationFeedbackType.Success);
-          award("Released Worry");
+          award?.("Released Worry"); 
+          trackEvent('worry_shredded');
           setWorryModalVisible(false);
           setWorryText("");
           fadeAnim.setValue(1); 
@@ -217,6 +269,26 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
       setIsBreathing(prev => !prev);
       safeHaptic(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
+
+  const handleMoodSelect = async (moodId) => {
+      setSelectedMood(moodId); // עדכון אופטימי - צובע מיד את האמוג'י
+      safeHaptic(Haptics.ImpactFeedbackStyle.Medium);
+      trackEvent('mental_space_mood', { mood: moodId });
+      if (logMood) {
+          try {
+              await logMood(moodId);
+          } catch(e) {
+              console.warn("[SupportScreen] Saved locally due to DB network error");
+              // אין כאן Alert - שומר על חוויית משתמש חלקה
+          }
+      }
+  };
+
+  const handleEnergySelect = (level) => {
+      setEnergyLevel(level);
+      safeHaptic(Haptics.ImpactFeedbackStyle.Light);
+      trackEvent('energy_level_set', { level });
+  };
 
   return (
     <Animated.View style={[localStyles.mainContainer, { backgroundColor: isDark ? '#000' : '#F9FAFB', transform: [{ translateY: pan.y }] }]}>
@@ -246,7 +318,6 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
             style={{ opacity: entranceOpacity, transform: [{ translateY: entranceAnim }] }}
         >
             
-            {/* AFFIRMATION FOCUS OR GENERAL */}
             {(!focusTool || focusTool === 'affirmation') && (
                 focusTool === 'affirmation' ? (
                     <View style={[localStyles.section, { marginTop: 40, alignItems: 'center' }]}>
@@ -265,7 +336,6 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
                 )
             )}
 
-            {/* MOOD CHECK-IN */}
             {!focusTool && (
                 <View style={localStyles.section}>
                     <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#0F172A' }]}>How are you feeling?</Text>
@@ -280,7 +350,7 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
                                         { backgroundColor: isDark ? '#1C1C1E' : '#fff', borderColor: isDark ? '#333' : '#F1F5F9' }, 
                                         isSelected && { backgroundColor: m.color, borderColor: m.color, transform: [{ scale: 1.05 }] }
                                     ]} 
-                                    onPress={() => { setSelectedMood(m.id); safeHaptic(Haptics.ImpactFeedbackStyle.Medium); }}
+                                    onPress={() => handleMoodSelect(m.id)}
                                 >
                                     <Text style={{ fontSize: 28 }}>{m.icon}</Text>
                                     <Text style={[localStyles.moodLabel, { color: isDark ? '#94A3B8' : '#64748B' }, isSelected && { color: '#fff', fontWeight: '900' }]}>{m.label}</Text>
@@ -291,7 +361,6 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
                 </View>
             )}
 
-            {/* ENERGY LEVEL */}
             {!focusTool && (
                 <View style={localStyles.section}>
                      <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#0F172A' }]}>Energy Level 🔋</Text>
@@ -299,7 +368,7 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
                          <Animated.View style={[localStyles.energyFill, { width: `${energyLevel}%`, backgroundColor: energyLevel > 30 ? Data.brand.green : Data.brand.red }]} />
                          <View style={localStyles.energyOverlay}>
                              {[20, 50, 80, 100].map(level => (
-                                 <TouchableOpacity key={`energy-${level}`} onPress={() => { setEnergyLevel(level); safeHaptic(Haptics.ImpactFeedbackStyle.Light); }} style={{flex: 1}} />
+                                 <TouchableOpacity key={`energy-${level}`} onPress={() => handleEnergySelect(level)} style={{flex: 1}} />
                              ))}
                          </View>
                      </View>
@@ -307,18 +376,15 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
                 </View>
             )}
 
-            {/* INTERACTIVE TOOLS */}
             {(!focusTool || focusTool === 'breathe' || focusTool === 'sounds') && (
                 <View style={[localStyles.section, focusTool && { marginTop: 40, alignItems: 'center' }]}>
                     {!focusTool && <Text style={[globalStyles.h2, { color: isDark ? '#fff' : '#0F172A' }]}>Interactive Tools</Text>}
                     
                     <ScrollView horizontal={!focusTool} showsHorizontalScrollIndicator={false} contentContainerStyle={focusTool ? { width: '100%', alignItems: 'center' } : { paddingRight: 20 }}>
                         
-                        {/* BREATHE CARD */}
                         {(!focusTool || focusTool === 'breathe') && (
                             <View style={[localStyles.toolCard, { backgroundColor: isDark ? '#001A17' : '#E0F2F1', borderWidth: isDark ? 1 : 0, borderColor: '#004D40' }, focusTool && localStyles.focusToolCard]}>
                                 <View style={[localStyles.circleContainer, focusTool && { width: 220, height: 220, marginBottom: 40 }]}>
-                                    {/* ⭐️ LOTUS AURAS ⭐️ */}
                                     <Animated.View style={[localStyles.breathAura, focusTool && localStyles.focusBreathAura, { transform: [{ scale: Animated.multiply(breathScale, 1.4) }], opacity: 0.15 }]} />
                                     <Animated.View style={[localStyles.breathAura, focusTool && localStyles.focusBreathAura, { transform: [{ scale: Animated.multiply(breathScale, 1.2) }], opacity: 0.3 }]} />
                                     
@@ -336,7 +402,6 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
                             </View>
                         )}
 
-                        {/* SOUNDS CARD */}
                         {(!focusTool || focusTool === 'sounds') && (
                             <View style={[localStyles.toolCard, { backgroundColor: isDark ? '#333300' : '#F9FBE7', borderWidth: isDark ? 1 : 0, borderColor: '#827717' }, focusTool && localStyles.focusToolCard]}>
                                 <View style={[localStyles.circleContainer, focusTool && { width: 120, height: 120, marginBottom: 20 }]}>
@@ -369,7 +434,6 @@ export default function SupportScreen({ sheet, setSecondSheet, setThirdSheet }) 
                 </View>
             )}
 
-            {/* WORRY BOX */}
             {!focusTool && (
                 <View style={[localStyles.section, { marginTop: 30 }]}>
                     <TouchableOpacity 
@@ -433,47 +497,37 @@ const localStyles = StyleSheet.create({
   streakPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   streakText: { fontSize: 13, fontWeight: '900' },
   scrollContent: { paddingBottom: 140 },
-  
   affirmationCard: { marginHorizontal: 20, padding: 22, borderRadius: 20, alignItems: 'center', borderLeftWidth: 5, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
   affirmationText: { fontSize: 18, fontStyle: 'italic', textAlign: 'center', lineHeight: 28, fontWeight: '500' },
-  
   section: { marginTop: 28, paddingHorizontal: 20 },
-  
   moodScroll: { paddingVertical: 10, gap: 14 },
   moodBtn: { paddingVertical: 16, paddingHorizontal: 16, minWidth: 75, borderRadius: 20, borderWidth: 1, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
   moodLabel: { fontSize: 13, marginTop: 10, fontWeight: '700' },
-  
   energyContainer: { height: 14, borderRadius: 7, marginTop: 12, overflow: 'hidden' },
   energyFill: { height: '100%', borderRadius: 7 },
   energyOverlay: { position: 'absolute', width: '100%', height: '100%', flexDirection: 'row' },
   energyText: { textAlign: 'right', marginTop: 8, fontSize: 13, fontWeight: '600' },
-  
   toolCard: { width: width * 0.65, padding: 20, borderRadius: 24, flexDirection: 'row', alignItems: 'center', marginRight: 15, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, elevation: 3 },
   focusToolCard: { width: width * 0.88, minHeight: 380, paddingVertical: 50, paddingHorizontal: 20, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', borderRadius: 36 },
-  
   circleContainer: { width: 60, height: 60, justifyContent: 'center', alignItems: 'center' },
   breathCircle: { width: 36, height: 36, borderRadius: 18, opacity: 0.85, backgroundColor: '#00695C', justifyContent: 'center', alignItems: 'center' },
   focusBreathCircle: { width: 140, height: 140, borderRadius: 70, shadowColor: '#004D40', shadowOpacity: 0.5, shadowRadius: 20, elevation: 10 },
   breathAura: { position: 'absolute', width: 36, height: 36, borderRadius: 18, backgroundColor: '#4DB6AC' },
   focusBreathAura: { width: 140, height: 140, borderRadius: 70 },
   breathePhaseText: { color: '#fff', fontSize: 18, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 2 },
-  
   toolTextContainer: { marginLeft: 16, flex: 1 },
   toolTitle: { fontWeight: '900', fontSize: 18 },
   toolDesc: { fontSize: 13, marginBottom: 8, marginTop: 2, fontWeight: '500' },
   miniBtn: { backgroundColor: '#00695C', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 12, alignSelf: 'flex-start' },
   miniBtnText: { color: '#fff', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
-  
   soundRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
   soundBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.6)', justifyContent: 'center', alignItems: 'center' },
-  
   promoCard: { borderRadius: 24, padding: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 8 },
   promoTextContainer: { flex: 1, paddingRight: 15 },
   promoSubText: { color: 'rgba(255,255,255,0.85)', fontSize: 15, lineHeight: 22, marginTop: 6, fontWeight: '500' },
   promoBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, alignSelf: 'flex-start', marginTop: 14 },
   promoBtnText: { fontWeight: '900', fontSize: 13, letterSpacing: 0.5 },
   promoIconContainer: { width: 70, alignItems: 'flex-end', justifyContent: 'center' },
-  
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { width: '90%', borderRadius: 28, padding: 28, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20, elevation: 15 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },

@@ -1,6 +1,5 @@
 // App.js (Entry Point)
-// ⭐️ KliqMind V6.0: Scrolling Restored, Logic Connected, Smart Imports & Push Ready ⭐️
-// ⭐️ Sovereign Eye Update: Deep Linking & Password Reset Integration (Web Hash Support) ⭐️
+// ⭐️ KliqMind V6.2: Final Integration for Premium & OTA Updates ⭐️
 
 import { setupPushNotifications } from './src/services/notificationSetup'; 
 import * as React from "react";
@@ -22,12 +21,16 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { NavigationContainer } from '@react-navigation/native'; 
 import { createStackNavigator } from '@react-navigation/stack'; 
 import Toast from 'react-native-toast-message'; 
-import * as Linking from 'expo-linking'; // ⭐️ ייבוא כלי הלינקים של אקספו ⭐️
+import * as Linking from 'expo-linking';
 
 import { useAppStore } from './src/store/useAppStore'; 
 import { styles } from './src/constants/styles';
 import * as Data from './src/constants/data';
 import { navigationRef } from './src/navigation/RootNavigation'; 
+
+// ⭐️ שילוב מנגנון עדכוני האוויר (OTA) ופרימיום ⭐️
+import { useAppUpdate } from './src/utils/useAppUpdate';
+import PremiumUpgradeSheet from './src/components/modals/PremiumUpgradeSheet';
 
 // --- Screen & Component Imports ---
 import AppRoot from './src/AppRoot'; 
@@ -36,10 +39,8 @@ import { ResetPasswordScreen } from './src/screens/ResetPasswordScreen';
 import FeedScreen from './src/screens/FeedScreen';
 import ArenaScreen from './src/screens/ArenaScreen';
 
-// 📸 ייבוא מסך המצלמה החדש לתוך מערכת הניווט הראשית 📸
 import { KliqCameraFilters } from './src/components/KliqCameraFilters'; 
 
-// ⭐️ "ייבוא חכם" למניעת קריסות של מודלים מרחפים ⭐️
 import * as PulseModalModule from './src/components/modals/PulseCreateModal';
 import * as PeekModalsModule from './src/components/modals/PeekModals';
 
@@ -48,7 +49,6 @@ const ProfilePeekModal = PeekModalsModule.ProfilePeekModal || PeekModalsModule.d
 
 const Stack = createStackNavigator();
 
-// ⭐️ הגדרת "רשת התפיסה" (Deep Linking) שמחכה ללינקים מהאימייל ⭐️
 const linking = {
   prefixes: ['kliqtap://', 'https://kliqtap.com'], 
   config: {
@@ -62,7 +62,6 @@ function AppContent() {
     const loadAuthAndMotivation = useAppStore(state => state.loadAuthAndMotivation);
     const isAuthLoading = useAppStore(state => state.isAuthLoading);
     
-    // שליפת מצב המודלים והפונקציות מה-Store לחיבור הלוגיקה
     const pulseCreateOpen = useAppStore(state => state.pulseCreateOpen);
     const setPulseCreateOpen = useAppStore(state => state.setPulseCreateOpen);
     const pulseImageUri = useAppStore(state => state.pulseImageUri);
@@ -70,11 +69,14 @@ function AppContent() {
     const createPulse = useAppStore(state => state.createPulse);
     const user = useAppStore(state => state.user);
     
+    // ⭐️ שימוש במשתנים החדשים מהפרימיום ⭐️
+    const premiumModalOpen = useAppStore(state => state.premiumModalOpen);
+    const setPremiumModalOpen = useAppStore(state => state.setPremiumModalOpen);
+    
     React.useEffect(() => { 
         if (loadAuthAndMotivation) {
             loadAuthAndMotivation(); 
             
-      // בדיקה אם המשתמש כבר מחובר (יש token) → נרשום מיד
       const hasUser = useAppStore.getState().user;
       setupPushNotifications({ isAuthenticated: !!hasUser }).catch(err => {
       if (__DEV__) console.warn("Push setup failed during App initialization:", err);
@@ -98,14 +100,11 @@ function AppContent() {
                 <Stack.Screen name="MainApp" component={AppRoot} />
                 <Stack.Screen name="AdminNotice" component={AdminNoticeScreen} />
                 <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
-                {/* 📸 הוספנו את מסך המצלמה כעמוד מלא במערכת הניווט 📸 */}
                 <Stack.Screen name="KliqCameraFilters" component={KliqCameraFilters} />
-                
                 <Stack.Screen name="Feed" component={FeedScreen} />
                 <Stack.Screen name="Arena" component={ArenaScreen} />
             </Stack.Navigator>
 
-            {/* חיבור לוגיקת יצירת ה-Pulse (סטורי) לשרת */}
             <PulseCreateModal 
                 visible={pulseCreateOpen} 
                 onClose={() => {
@@ -128,6 +127,12 @@ function AppContent() {
             />
             
             <ProfilePeekModal />
+
+            {/* ⭐️ הוספת מודאל הפרימיום לכל עמוד ⭐️ */}
+            <PremiumUpgradeSheet 
+                visible={premiumModalOpen} 
+                onClose={() => setPremiumModalOpen(false)} 
+            />
         </>
     );
 }
@@ -136,9 +141,10 @@ export default function App() {
   const { width } = useWindowDimensions();
   const isDesktopWeb = Platform.OS === 'web' && width > 768;
 
+  useAppUpdate();
+
   return (
     <SafeAreaProvider>
-      {/* ⭐️ כאן הזרקנו את ה-linking לתוך קונטיינר הניווט הראשי ⭐️ */}
       <NavigationContainer ref={navigationRef} linking={linking}>
         <View style={[
             localStyles.webBackground, 

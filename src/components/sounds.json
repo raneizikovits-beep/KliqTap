@@ -1,6 +1,5 @@
 {
-  "version": "week_1_launch",
-  "note_for_ran": "החלף כל file_url ב-URL אמיתי בשרת שלך, בדיוק כמו filters.json. הורד טראקים חוקיים מ-Uppbeat/Pixabay (ודא רישיון שמתיר sub-licensing ל-UGC), העלה ל-uploads/sounds/, וקבע artist+license. שירי TayTop = owner:true, אפס סיכון.",
+  "version": "1.0.0",
   "sounds": [
     {
       "id": "taytop_gwapo",
@@ -33,7 +32,7 @@
       "category": "upbeat",
       "duration_sec": 30,
       "is_owned": false,
-      "license": "Uppbeat — verify UGC/sub-license terms",
+      "license": "Uppbeat — verify UGC/sub-license terms before shipping",
       "cover_emoji": "🎉",
       "file_name": "sunny_pop.mp3",
       "file_url": "https://api.kliqtap.com/uploads/sounds/upbeat/sunny_pop.mp3"
@@ -45,7 +44,7 @@
       "category": "chill",
       "duration_sec": 30,
       "is_owned": false,
-      "license": "Uppbeat — verify UGC/sub-license terms",
+      "license": "Uppbeat — verify UGC/sub-license terms before shipping",
       "cover_emoji": "🌙",
       "file_name": "lofi_nights.mp3",
       "file_url": "https://api.kliqtap.com/uploads/sounds/chill/lofi_nights.mp3"
@@ -57,7 +56,7 @@
       "category": "dance",
       "duration_sec": 30,
       "is_owned": false,
-      "license": "Uppbeat — verify UGC/sub-license terms",
+      "license": "Uppbeat — verify UGC/sub-license terms before shipping",
       "cover_emoji": "💃",
       "file_name": "budots_energy.mp3",
       "file_url": "https://api.kliqtap.com/uploads/sounds/dance/budots_energy.mp3"

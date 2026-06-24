@@ -34,6 +34,8 @@ import { Video } from 'expo-av';
 import { brand } from '../../constants/data';
 import * as PulseService from '../../store/pulse.service';
 import { useAppStore } from '../../store/useAppStore'; 
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
+
 
 const { width, height } = Dimensions.get('window');
 
@@ -194,6 +196,9 @@ const handleSubmit = async () => {
             return; 
         }
         
+        // 👇 הדיווח הראשי: מודד מה סוג התוכן שנשלח עכשיו (מג'יק / פיד / פולס)
+        trackEvent('content_published_modal', { postType: postType, isVideo: isVideo }); 
+
         if (postType === 'magic') {
             if (!PulseService?.magicUpload) {
                 Alert.alert("Magic unavailable", "The Magic upload service isn't ready.");

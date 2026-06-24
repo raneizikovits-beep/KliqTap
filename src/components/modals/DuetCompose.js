@@ -26,6 +26,8 @@ import { Video } from 'expo-av';
 import { useAudioFX } from './useAudioFX';
 import { useCoSinger } from './useCoSinger';
 import * as api from '../../store/api';   // 👈 your existing API wrapper (auth + FormData)
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
+
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -313,6 +315,7 @@ export const DuetCompose = ({ sheet, onClose, isDark, supabase, currentUser }) =
       if (isPulse) form.append('vibe', 'Happy');
 
       await api.fetchAPI(endpoint, { method: 'POST', body: form });
+      trackEvent('duet_published', { target: publishTo, syncScore: syncPeak }); // 👈 הדיווח
 
       Alert.alert(
         'Posted! 🎉',

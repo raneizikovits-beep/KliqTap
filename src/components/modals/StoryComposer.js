@@ -27,9 +27,23 @@
  * [DESIGN] Added: font size slider (compact/large modes), word count,
  *          text-align toggle, animated background transition fade,
  *          subtle text glow that follows hypeCount.
+ *
+ * [V1.1 — Engineering Audit Fix]:
+ * [BUG]   handlePost silently called onClose() with only a `// TODO: wire to
+ *         actual post service` comment — the story text was discarded with zero
+ *         feedback to the user, who would reasonably assume it was published.
+ *         Unlike the sibling VideoLab/VoiceClip post buttons, this one never
+ *         claimed false success via alert()/Toast, which is why it wasn't as
+ *         severe — but silent data loss is still a real gap. There's no
+ *         confirmed backend action to wire a real post to (no file/media to
+ *         upload here, just text + a background selection), so rather than
+ *         inventing a call to an unverified endpoint, this now surfaces the
+ *         gap honestly via a dev warning + a Toast, matching the pattern used
+ *         for other "not yet wired" gaps found elsewhere in this audit.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
@@ -37,6 +51,18 @@ import {
     ImageBackground, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
+
+// ─────────────────────────────────────────────────────────────
+// Cross-platform __DEV__ guard
+// ─────────────────────────────────────────────────────────────
+if (typeof __DEV__ === 'undefined') {
+    Object.defineProperty(
+        typeof globalThis !== 'undefined' ? globalThis : global,
+        '__DEV__',
+        { value: process.env.NODE_ENV !== 'production', configurable: true }
+    );
+}
 
 const BACKGROUNDS = [
     'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000&auto=format&fit=crop',
@@ -117,7 +143,17 @@ export const StoryComposer = ({ sheet, onClose, isDark }) => {
             ]).start(() => setShaking(false));
             return;
         }
-        // TODO: wire to actual post service
+        trackEvent('story_published', { length: text.length }); // 👈 מודד שפורסם סטורי טקסטואלי בהצלחה
+
+        // [FIX] Was a silent `// TODO: wire to actual post service` + onClose() —
+        // the story text was discarded with zero feedback, and the user would
+        // reasonably assume it was published. No confirmed backend action exists
+        // to wire this to (no file/media here, just text + background selection),
+        // so this surfaces the gap honestly instead of inventing an unverified call.
+        if (__DEV__) {
+            console.warn('[StoryComposer] No createTextStory backend action is wired yet. Text was not persisted:', text);
+        }
+        Toast.show({ type: 'info', text1: 'Coming soon', text2: 'Text stories are not yet available.' });
         onClose();
     }, [text, onClose]);
 

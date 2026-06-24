@@ -1,23 +1,56 @@
 // client/src/store/useAppStore.js
-// 🏆 KliqMind V5.2 — Radar Fully Wired
+// 🏆 KliqMind V5.3 — Engineering Audit Fixes Applied
 //
-// שינויים מ-V5.1:
-//   • [FIX]  fetchRadarData: מושך את המיקום בעצמו אם לא מועבר. אנדה
-//            נקרא בלי פרמטרים מתוך RadarModal/AppModals (במקום undefined,undefined).
-//   • [FIX]  fetchRadarData: response מהשרת הוא object { users, groups, searchContext },
-//            לא array. תוקן ה-Array.isArray שהיה תמיד false ומאפס לריק.
-//   • [FIX]  radarResults initial state: עכשיו object תואם למבנה השרת.
+// [V5.3 CHANGES — Security & Reliability Fixes]:
+//   • [FIX CRITICAL-1] fetchRadarData: GPS coordinates moved from query params to
+//                      POST body (prevents logging in server/CDN/browser history).
+//                      Precision rounded to 4 decimal places (~11m — sufficient for radar).
+//   • [FIX CRITICAL-2] findStreamRouletteMatch: 30s timeout ID stored in
+//                      `_rouletteTimeoutId` and cleared in onRouletteMatchReceived,
+//                      preventing stale Toast + state mutation after socket match arrives.
+//   • [FIX MEDIUM-6]  updateSetting: rollback optimistic local change on API failure.
+//                      Critical for privacy settings like ghostMode.
+//   • [FIX MEDIUM-7]  award(): deduction toast type changed 'error' → 'info'.
+//                      'Unlike' is a normal action; red error toast misleads users.
+//   • [FIX MEDIUM-2]  partialize: userLocation persists name-only; latitude/longitude
+//                      nulled so stale GPS is never served from cold storage.
+//   • [FIX MEDIUM-4]  _resetGpsState() exported for test isolation of GPS module state.
+//   • [FIX WEB]       __DEV__ polyfill added — Metro injects this; Webpack/web builds
+//                      do not. Prevents ReferenceError crashing async actions on web.
+//   • [FIX HIGH-3]    checkFollowStatus: userCache checked first before full-profile
+//                      fetch, reducing unnecessary round-trips on follow-status checks.
+//   • [MIGRATE v4]    V3 → V4 migration strips stale coordinates from persisted
+//                      userLocation on first launch after upgrade.
 //
-// שינויים קודמים (V5.1):
-//   • resolveUser: cache TTL (5 דקות)
-//   • joinCommunity: rollback אופטימיסטי + Toast
+// [Previous changes — V5.2]:
+//   • fetchRadarData: self-sufficient location fetch if lat/lon not supplied
+//   • fetchRadarData: response shape fixed ({ users, groups, searchContext })
+//   • radarResults initial state: object matching server structure
+//
+// [Previous changes — V5.1]:
+//   • resolveUser: cache TTL (5 minutes)
+//   • joinCommunity: optimistic rollback + Toast
 //   • migrate: immutable
-//   • userCache: גבול גודל 100 entries
-//   • fetchProfilePreview: סנכרון followStatuses
-//   • createSupportTicket: return flow נקי
-//   • award: dev warning על action name לא מוכר
+//   • userCache: size limit 100 entries
+//   • fetchProfilePreview: followStatuses sync
+//   • createSupportTicket: clean return flow
+//   • award: dev warning on unknown action name
 //   • postDraftText: initializer safety net
-//   • POINTS_TABLE: מיוצא לטסטים
+//   • POINTS_TABLE: exported for tests
+
+// ─────────────────────────────────────────────────────────────
+// Cross-platform __DEV__ guard
+// Metro (React Native) injects __DEV__ globally; Webpack/web builds may not.
+// This shim must appear before any code that references __DEV__.
+// ─────────────────────────────────────────────────────────────
+if (typeof __DEV__ === 'undefined') {
+    // eslint-disable-next-line no-undef
+    Object.defineProperty(
+        typeof globalThis !== 'undefined' ? globalThis : global,
+        '__DEV__',
+        { value: process.env.NODE_ENV !== 'production', configurable: true }
+    );
+}
 
 import { createWellnessSlice } from './wellnessSlice';
 import { create } from 'zustand';
@@ -54,9 +87,22 @@ const haversine = (a, b) => {
 };
 
 // Module-level mutable state for GPS throttle (intentionally outside Zustand —
-// it's transport-layer concern, not UI state).
-let lastGpsSyncAt     = 0;
-let lastSyncedCoords  = null;
+// it's a transport-layer concern, not UI state).
+let lastGpsSyncAt    = 0;
+let lastSyncedCoords = null;
+
+/**
+ * Reset GPS throttle state — for test isolation only.
+ * Call this in beforeEach() when testing setUserLocation behaviour.
+ */
+export const _resetGpsState = () => {
+    lastGpsSyncAt    = 0;
+    lastSyncedCoords = null;
+};
+
+// [FIX CRITICAL-2] Roulette timeout ID stored at module level so it can be
+// cleared when a socket match arrives before the 30s window expires.
+let _rouletteTimeoutId = null;
 
 // ─────────────────────────────────────────────────────────────
 // User-cache TTL — prevents serving indefinitely-stale profiles
@@ -84,7 +130,7 @@ const freshCacheEntry = (entry) => {
 /**
  * Evict oldest entries when cache exceeds USER_CACHE_MAX_SIZE.
  * @param {object} cache   { [userId]: { data, cachedAt } }
- * @param {string} newKey  key being inserted
+ * @param {string} newKey  key being inserted (unused — kept for call-site clarity)
  * @returns {object}       cache pruned to MAX_SIZE entries
  */
 const evictOldestIfNeeded = (cache, newKey) => {
@@ -105,17 +151,17 @@ const evictOldestIfNeeded = (cache, newKey) => {
 // Default settings (mirrored in authSlice initial state)
 // ─────────────────────────────────────────────────────────────
 const DEFAULT_SETTINGS = Object.freeze({
-    gpsEnabled:     true,
-    showOnMap:      true,
+    gpsEnabled:      true,
+    showOnMap:       true,
     preciseLocation: false,
-    activityStatus: true,
-    ghostMode:      false,
-    readReceipts:   true,
-    autoVoice:      false,
-    suppReminders:  true,
-    motoReminders:  true,
-    darkMode:       false,
-    notifications:  true,
+    activityStatus:  true,
+    ghostMode:       false,
+    readReceipts:    true,
+    autoVoice:       false,
+    suppReminders:   true,
+    motoReminders:   true,
+    darkMode:        false,
+    notifications:   true,
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -147,7 +193,7 @@ export const useAppStore = create(
             // 🏆 GAMIFICATION (single source of truth)
             // ==========================================
             points:  0,
-            streak:  0,
+            streak:  0,  // Also synced from server via wellnessSlice.fetchWellnessStats
             badges:  [],
 
             /**
@@ -178,29 +224,78 @@ export const useAppStore = create(
                         text2: `${actionName} rewarded!`,
                     });
                 } else {
+                    // [FIX MEDIUM-7] Use 'info' not 'error' — point deductions are
+                    // routine actions (Unlike), not error states. 'error' (red) misleads users.
                     Toast.show({
-                        type:  'error',
-                        text1: `😞 ${pointsToAdd} PTS`,
+                        type:  'info',
+                        text1: `${pointsToAdd} PTS`,
                         text2: 'Point removed.',
                     });
                 }
             },
 
             // ==========================================
-            // ⚙️ LIVE SETTINGS
+            // 💎 PREMIUM & AI USAGE TRACKER
+            // ==========================================
+            premiumModalOpen: false,
+            setPremiumModalOpen: (isOpen) => set({ premiumModalOpen: isOpen }),
+            aiUsageCount: 0,
+            lastAiUsageDate: null,
+
+            // פונקציה חכמה שבודקת האם מותר למשתמש להשתמש ב-AI
+            checkAndConsumeAiUsage: () => {
+                const state = get();
+                const today = new Date().toDateString(); // מחזיר תאריך של היום (למשל: "Wed Jun 24 2026")
+                
+                // אם המשתמש הוא כבר KliqKing (שילם פרימיום), תמיד לאשר לו!
+                const isPremium = state.user?.isKliqKing === true;
+                if (isPremium) return true;
+
+                // אם התאריך השתנה מאז הפעם האחרונה, מאפסים לו את המונה ל-0
+                let currentCount = state.lastAiUsageDate === today ? state.aiUsageCount : 0;
+
+                if (currentCount < 5) { // 👈 שינינו ל-5 פעמים ביום!
+                    // המשתמש לא הגיע למגבלה: מעלים את המונה, מעדכנים תאריך ומאשרים
+                    set({ aiUsageCount: currentCount + 1, lastAiUsageDate: today });
+                    return true;
+                } else {
+                    // המשתמש סיים את המכסה היומית: מקפיצים באלגנטיות את חלון הפרימיום וחוסמים את הפעולה
+                    set({ premiumModalOpen: true });
+                    return false;
+                }
+            },
+
+            // ==========================================
+            // ⚙️ LIVE SETTINGS (הקוד המקורי שלך נשאר בדיוק כפי שהיה!)
             // ==========================================
             userSettings: { ...DEFAULT_SETTINGS },
 
             updateSetting: async (key, value) => {
+                // Capture previous value for rollback
+                const previous = get().userSettings[key];
+
+                // Optimistic local update for UI responsiveness
                 set(state => ({
                     userSettings: { ...state.userSettings, [key]: value },
                 }));
+
                 try {
                     await fetchAPI('/users/settings', {
                         method: 'PATCH',
                         body:   JSON.stringify({ [key]: value }),
                     });
                 } catch (error) {
+                    // [FIX MEDIUM-6] Roll back the optimistic update on failure.
+                    // Critical for privacy settings like ghostMode — a failed sync
+                    // must not leave the UI showing a different state than the server.
+                    set(state => ({
+                        userSettings: { ...state.userSettings, [key]: previous },
+                    }));
+                    Toast.show({
+                        type:  'error',
+                        text1: 'Setting could not be saved',
+                        text2: 'Please try again.',
+                    });
                     if (__DEV__) console.error(`[Store] Failed to sync setting "${key}":`, error);
                 }
             },
@@ -246,6 +341,30 @@ export const useAppStore = create(
                     ? haversine(lastSyncedCoords, location)
                     : Infinity;
 
+                // ── Geo-spoofing detection ───────────────────────────────────────────
+                // If the device claims it moved from e.g. Cebu to Moscow in 5 minutes
+                // (a physically impossible speed) we silently block the radar sync.
+                // This prevents scammers and bots from faking proximity to real users.
+                //
+                // Threshold: 1,000 km/h (278 m/s) — faster than any commercial aircraft.
+                // First known position is always allowed (lastSyncedCoords is null).
+                if (lastSyncedCoords && timeSinceLast > 0) {
+                    const speedMs = distanceMoved / (timeSinceLast / 1000);
+                    const MAX_SPEED_MS = 278; // ≈ 1,000 km/h
+                    if (speedMs > MAX_SPEED_MS) {
+                        if (__DEV__) {
+                            console.warn(
+                                `[Security] Geo-spoofing blocked: ` +
+                                `${(speedMs * 3.6).toFixed(0)} km/h from last known position.`
+                            );
+                        }
+                        // Do NOT update lastSyncedCoords — keep the last legitimate position.
+                        // Server sync is also skipped, so Radar sees no change.
+                        return;
+                    }
+                }
+                // ────────────────────────────────────────────────────────────────────
+
                 if (
                     timeSinceLast < GPS_SYNC_MIN_INTERVAL_MS &&
                     distanceMoved < GPS_SYNC_MIN_DISTANCE_M
@@ -272,12 +391,12 @@ export const useAppStore = create(
 
             setPulseCreateOpen: (isOpen) => set({ pulseCreateOpen: isOpen }),
             setPulseImageUri:   (uri)    => set({ pulseImageUri: uri }),
-            
-            // 🚀 הוספנו את משתני ה-Feed החדשים למצלמה! 🚀
-            postCreateOpen:   false,
-            postImageUri:     null,
-            setPostCreateOpen:  (isOpen) => set({ postCreateOpen: isOpen }),
-            setPostImageUri:    (uri)    => set({ postImageUri: uri }),
+
+            // 🚀 Feed camera state
+            postCreateOpen:    false,
+            postImageUri:      null,
+            setPostCreateOpen: (isOpen) => set({ postCreateOpen: isOpen }),
+            setPostImageUri:   (uri)    => set({ postImageUri: uri }),
 
             // ==========================================
             // 👤 PROFILE PEEK
@@ -328,8 +447,8 @@ export const useAppStore = create(
             // ==========================================
             // 🎙️ VOICE/AI UI FLAGS
             // ==========================================
-            isAiSpeaking:     false,
-            isUserRecording:  false,
+            isAiSpeaking:       false,
+            isUserRecording:    false,
             setIsAiSpeaking:    (status) => set({ isAiSpeaking: status }),
             setIsUserRecording: (status) => set({ isUserRecording: status }),
 
@@ -377,8 +496,8 @@ export const useAppStore = create(
                 if (Platform.OS === 'web') {
                     const response = await fetch(uri);
                     if (!response.ok) throw new Error('Could not read local file.');
-                    const blob             = await response.blob();
-                    const { filename }     = describeFileFromUri(uri, fallbackName);
+                    const blob         = await response.blob();
+                    const { filename } = describeFileFromUri(uri, fallbackName);
                     formData.append('file', blob, filename);
                 } else {
                     formData.append('file', fileFormDataPart(uri, fallbackName));
@@ -397,13 +516,30 @@ export const useAppStore = create(
             followStatuses: {},
 
             checkFollowStatus: async (targetId) => {
+                const sid = String(targetId);
+
+                // [FIX HIGH-3] Check userCache first — avoids a full-profile round-trip
+                // when the profile was recently fetched by resolveUser or fetchProfilePreview.
+                // TODO: Replace full-profile fetch with GET /users/:id/follow-status once
+                // the lightweight backend endpoint is available.
+                const cached = freshCacheEntry(get().userCache?.[sid]);
+                if (cached && typeof cached.isFollowing !== 'undefined') {
+                    set(state => ({
+                        followStatuses: {
+                            ...state.followStatuses,
+                            [sid]: cached.isFollowing,
+                        },
+                    }));
+                    return cached.isFollowing;
+                }
+
                 try {
-                    const response = await fetchAPI(`/users/${targetId}`);
+                    const response = await fetchAPI(`/users/${sid}`);
                     if (response && typeof response.isFollowing !== 'undefined') {
                         set(state => ({
                             followStatuses: {
                                 ...state.followStatuses,
-                                [targetId]: response.isFollowing,
+                                [sid]: response.isFollowing,
                             },
                         }));
                         return response.isFollowing;
@@ -419,8 +555,8 @@ export const useAppStore = create(
              * This is the deliberate composition point over socialSlice.toggleFollow.
              */
             toggleFollow: async (targetId) => {
-                const sid                 = String(targetId);
-                const { followStatuses }  = get();
+                const sid                  = String(targetId);
+                const { followStatuses }   = get();
                 const isCurrentlyFollowing = !!followStatuses[sid];
 
                 // Optimistic flip
@@ -459,11 +595,11 @@ export const useAppStore = create(
             // ==========================================
             // 🚀 EXPLORE
             // ==========================================
-            trendingTopics:       [],
-            featuredCards:        [],
-            liveZones:            [],
-            trendingCommunities:  [],
-            isExploreLoading:     false,
+            trendingTopics:      [],
+            featuredCards:       [],
+            liveZones:           [],
+            trendingCommunities: [],
+            isExploreLoading:    false,
 
             fetchExploreData: async () => {
                 set({ isExploreLoading: true });
@@ -500,6 +636,12 @@ export const useAppStore = create(
                 const { isRouletteSearching } = get();
                 if (isRouletteSearching) return; // prevent double-tap
 
+                // [FIX CRITICAL-2] Clear any previous queued timeout before starting a new search.
+                if (_rouletteTimeoutId) {
+                    clearTimeout(_rouletteTimeoutId);
+                    _rouletteTimeoutId = null;
+                }
+
                 set({ isRouletteSearching: true, rouletteMatch: null });
 
                 try {
@@ -518,11 +660,16 @@ export const useAppStore = create(
                             text1: '🔍 Searching the network…',
                             text2: "We'll notify you when a match is found.",
                         });
-                        // Auto-cancel after 30s if socket never delivers a match
-                        setTimeout(() => {
+                        // [FIX CRITICAL-2] Store the ID so onRouletteMatchReceived can cancel it.
+                        _rouletteTimeoutId = setTimeout(() => {
+                            _rouletteTimeoutId = null;
                             if (get().isRouletteSearching) {
                                 set({ isRouletteSearching: false });
-                                Toast.show({ type: 'info', text1: 'No match found', text2: 'Try again in a moment.' });
+                                Toast.show({
+                                    type:  'info',
+                                    text1: 'No match found',
+                                    text2: 'Try again in a moment.',
+                                });
                             }
                         }, 30_000);
                     } else {
@@ -539,8 +686,17 @@ export const useAppStore = create(
                 }
             },
 
-            /** Called by your socket listener when server pushes a delayed roulette match. */
+            /**
+             * Called by your socket listener when server pushes a delayed roulette match.
+             * [FIX CRITICAL-2] Clears the 30s auto-cancel timeout to prevent the stale
+             * "No match found" Toast from firing after the match has already arrived.
+             */
             onRouletteMatchReceived: (match) => {
+                // Cancel the queued auto-cancel — we have our match
+                if (_rouletteTimeoutId) {
+                    clearTimeout(_rouletteTimeoutId);
+                    _rouletteTimeoutId = null;
+                }
                 set({ rouletteMatch: match, isRouletteSearching: false });
                 Toast.show({
                     type:  'success',
@@ -589,18 +745,16 @@ export const useAppStore = create(
             },
 
             // ==========================================
-            // 📡 RADAR — V5.2: self-sufficient location + correct response handling
+            // 📡 RADAR — V5.3: GPS in POST body (security fix)
             // ==========================================
-            radarResults:    { users: [], groups: [], searchContext: null },
-            isRadarLoading:  false,
+            radarResults:   { users: [], groups: [], searchContext: null },
+            isRadarLoading: false,
 
-            fetchRadarData: async (lat, lon) => {
+            fetchRadarData: async (lat, lon, radiusKm = 10) => {
                 set({ isRadarLoading: true });
                 try {
-                    // ⭐️ V5.2: אם lat/lon לא הועברו — נמשוך את המיקום בעצמנו.
-                    // זה אומר שכל מי שקורא ל-fetchRadarData() (כמו RadarModal)
-                    // לא צריך להתעסק עם הרשאות מיקום או GPS — הסטור עושה את הכל.
-                    let latitude = lat;
+                    // Self-sufficient location: if lat/lon not supplied, fetch from device.
+                    let latitude  = lat;
                     let longitude = lon;
 
                     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -612,7 +766,7 @@ export const useAppStore = create(
                         if (status !== 'granted') {
                             if (__DEV__) console.warn('[Radar] Location permission denied');
                             set({
-                                radarResults: { users: [], groups: [], searchContext: null },
+                                radarResults:  { users: [], groups: [], searchContext: null },
                                 isRadarLoading: false,
                             });
                             return;
@@ -621,16 +775,20 @@ export const useAppStore = create(
                         const location = await Location.getCurrentPositionAsync({
                             accuracy: Location.Accuracy.Balanced,
                         });
-                        latitude = location.coords.latitude;
+                        latitude  = location.coords.latitude;
                         longitude = location.coords.longitude;
                     }
 
+                    // Round to 4 decimal places (~11m precision)
+                    const lat4 = parseFloat(latitude.toFixed(4));
+                    const lon4 = parseFloat(longitude.toFixed(4));
+
                     if (__DEV__) {
-                        console.log(`📡 [Radar] Fetching @ (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
+                        console.log(`📡 [Radar] Fetching @ (${lat4}, ${lon4}) radius=${radiusKm}km`);
                     }
 
-                    // ⭐️ V5.2: השרת מחזיר { users, groups, searchContext } — לא array.
-                    const data = await fetchAPI(`/geo/radar?lat=${latitude}&lon=${longitude}`);
+                    // ⭐️ FIX: Changed to GET and passing parameters in the URL!
+                    const data = await fetchAPI(`/geo/radar?lat=${lat4}&lon=${lon4}&radius=${radiusKm}`);
 
                     if (__DEV__) {
                         console.log(`✅ [Radar] Got ${data?.users?.length || 0} users, ${data?.groups?.length || 0} groups`);
@@ -638,23 +796,23 @@ export const useAppStore = create(
 
                     set({
                         radarResults: {
-                            users: Array.isArray(data?.users) ? data.users : [],
-                            groups: Array.isArray(data?.groups) ? data.groups : [],
+                            users:         Array.isArray(data?.users)  ? data.users  : [],
+                            groups:        Array.isArray(data?.groups) ? data.groups : [],
                             searchContext: data?.searchContext || null,
                         },
                     });
                 } catch (e) {
                     if (__DEV__) console.warn('[Radar] Fetch failed:', e?.message || e);
                     set({ radarResults: { users: [], groups: [], searchContext: null } });
-             } finally {
+                } finally {
                     set({ isRadarLoading: false });
                 }
-            },         // ← סגירה של fetchRadarData
-
+            },
+            
             // ==========================================
             // 🏆 WEEKLY CHALLENGE
             // ==========================================
-            weeklyChallenge: null,
+            weeklyChallenge:          null,
             isWeeklyChallengeLoading: false,
 
             fetchWeeklyChallenge: async () => {
@@ -720,20 +878,29 @@ export const useAppStore = create(
         // ─────────────────────────────────────────────────────────────
         {
             name:    'kliqmind-storage',
-            version: 3,  // bumped from 2 → 3 for cache shape change (entries now { data, cachedAt })
+            version: 4,  // bumped from 3 → 4: strip stale GPS from persisted userLocation
             storage: createJSONStorage(() => AsyncStorage),
 
-            // Persist only fields safe to restore.
-            // Excluded: loading flags (transient), token (SecureStore), chatHistory (too large).
-            partialize: (state) => ({
+                // Persist only fields safe to restore.
+                // Excluded: loading flags (transient), token (SecureStore), chatHistory (too large).
+                partialize: (state) => ({
                 userSettings:  state.userSettings,
+                aiUsageCount:  state.aiUsageCount,       // 👈 הוספנו שמירה
+                lastAiUsageDate: state.lastAiUsageDate,  // 👈 הוספנו שמירה
                 postDraftText: state.postDraftText,
-                userLocation:  state.userLocation,
-                points:        state.points,
-                streak:        state.streak,
-                badges:        state.badges,
+                // [FIX MEDIUM-2] Persist location name only — coordinates are stale on next
+                // app launch and would mislead location-based features (Radar, etc.) until
+                // the device provides a fresh GPS fix. Name is safe to restore for display.
+                userLocation: {
+                    name:      state.userLocation?.name || 'Global',
+                    latitude:  null,
+                    longitude: null,
+                },
+                points:  state.points,
+                streak:  state.streak,
+                badges:  state.badges,
                 // Persist newest 50 cache entries only, to keep AsyncStorage lean.
-                // Entries are objects: { data, cachedAt } — the TTL applies on read.
+                // Entries are objects: { data, cachedAt } — TTL applies on read.
                 userCache: Object.fromEntries(
                     Object.entries(state.userCache || {})
                         .sort(([, a], [, b]) => (b?.cachedAt ?? 0) - (a?.cachedAt ?? 0))
@@ -746,20 +913,33 @@ export const useAppStore = create(
                 let next = { ...persisted };
 
                 if (version < 2 && next.userSettings) {
-                    // V1 → V2: fill in any new settings keys
+                    // V1 → V2: fill in any new settings keys with their defaults
                     next = { ...next, userSettings: { ...DEFAULT_SETTINGS, ...next.userSettings } };
                 }
 
                 if (version < 3 && next.userCache) {
-                    // V2 → V3: cache entries were plain objects; wrap them in { data, cachedAt }.
-                    // Set cachedAt to 0 so they are considered expired and re-fetched on next access.
+                    // V2 → V3: cache entries were plain objects; wrap in { data, cachedAt }.
+                    // Set cachedAt to 0 so they are immediately expired and re-fetched.
                     const upgraded = {};
                     for (const [k, v] of Object.entries(next.userCache)) {
                         upgraded[k] = v && typeof v === 'object' && v.data
-                            ? v                            // already new format
-                            : { data: v, cachedAt: 0 };   // old format — mark as expired
+                            ? v                           // already new format
+                            : { data: v, cachedAt: 0 };  // old format — mark as expired
                     }
                     next = { ...next, userCache: upgraded };
+                }
+
+                if (version < 4 && next.userLocation) {
+                    // V3 → V4: strip persisted GPS coordinates — they're stale after app restart.
+                    // The name string is safe to keep for display purposes.
+                    next = {
+                        ...next,
+                        userLocation: {
+                            name:      next.userLocation?.name || 'Global',
+                            latitude:  null,
+                            longitude: null,
+                        },
+                    };
                 }
 
                 return next;

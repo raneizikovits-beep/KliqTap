@@ -15,7 +15,7 @@ import { useAppStore } from '../store/useAppStore';
 import * as Data from '../constants/data';
 import PostCard from '../components/PostCard';
 import { PostCommentsModal } from '../components/modals/PostCommentsModal';
-
+import { PostLikesModal } from '../components/modals/PostLikesModal'; // 👈 הייבוא החדש
 // ─────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────
@@ -114,6 +114,7 @@ export default function ExploreScreen({ navigation, setSecondSheet }) {
 
   const [refreshing, setRefreshing]     = useState(false);
   const [commentPostId, setCommentPostId] = useState(null);
+  const [likesPostId, setLikesPostId]   = useState(null); // 👈 הסטייט החדש
 
   // Abort-safe ref — prevents setState after unmount
   const mountedRef = useRef(true);
@@ -194,11 +195,12 @@ export default function ExploreScreen({ navigation, setSecondSheet }) {
 
     return (
       <View style={styles.postWrapper}>
-        <PostCard
+       <PostCard
           post={post}
           user={user}
           onOpenComments={() => setCommentPostId(postId)}
           onOpenProfile={(userId) => setSecondSheet({ source: 'Profile', userId })}
+          onOpenLikes={setLikesPostId} // 👈 חיבור הכפתור לחלון
           isDark={isDark}
         />
       </View>
@@ -251,6 +253,14 @@ export default function ExploreScreen({ navigation, setSecondSheet }) {
         postId={commentPostId}
         visible={!!commentPostId}
         onClose={handleCloseComments}
+        isDark={isDark}
+      />
+
+      {/* ⭐️ מודאל הלייקים ⭐️ */}
+      <PostLikesModal
+        postId={likesPostId}
+        visible={!!likesPostId}
+        onClose={() => setLikesPostId(null)}
         isDark={isDark}
       />
     </View>

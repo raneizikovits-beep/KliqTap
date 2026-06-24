@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { brand } from '../../constants/data';
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
+
 
 // Phase durations (in milliseconds)
 const PHASES = [
@@ -85,6 +87,7 @@ const BreathingExercise = ({ onClose }) => {
                 const nextCycle = cycleCount + 1;
                 if (nextCycle >= TOTAL_CYCLES) {
                     // Session complete!
+                    trackEvent('breathing_exercise_completed', {}); // 👈 מדידת סיום בהצלחה!
                     setIsRunning(false);
                     setCompleted(true);
                     return;
@@ -103,6 +106,7 @@ const BreathingExercise = ({ onClose }) => {
     // Handlers
     // ────────────────────────────────────────────────
     const handleStart = useCallback(() => {
+        trackEvent('breathing_exercise_started', {}); // 👈 מדידת התחלת תרגיל
         setPhaseIndex(0);
         setCycleCount(0);
         setCompleted(false);

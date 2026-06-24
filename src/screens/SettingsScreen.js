@@ -309,7 +309,7 @@ const FAQ = [
   { q: 'Is my location always shared?', a: 'No. Location is off until you enable GPS Services. Even then, "Show on Map" and "Precise Location" are separate opt-ins you control here in Settings.' },
   { q: 'What does the KliqMind AI do?', a: 'KliqMind is your in-app assistant. Choose a persona in the AI Lab, and enable Auto-Voice if you want spoken answers.' },
   { q: 'How do I make my account private?', a: 'Settings → Privacy & Interactions → Account Privacy. When private, only approved followers can see your posts and pulses.' },
-  { q: 'What is "Data Sovereignty"?', a: 'It means your data belongs to you. You can export everything from "Download My Data", and account deletion is a true, permanent erase — not a soft hide.' },
+  { q: 'What is "Data Sovereignty"?', a: 'It means your data belongs to you. You can export everything from "Download My Data", and account deletion is a true, permanent erase - not a soft hide.' },
 ];
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -994,6 +994,47 @@ function HelpScreen({ openLink }) {
         <Text style={s.groupTitle}>Contact</Text>
         <Row icon="mail-outline" color="#2196F3" title="Email Support" subtitle={SUPPORT_EMAIL} onPress={() => openLink(`mailto:${SUPPORT_EMAIL}`)} isLast />
         <Row icon="bug-outline" color="#FF5722" title="Report a Problem" subtitle="Tell us what went wrong" onPress={() => openLink(`mailto:${SUPPORT_EMAIL}?subject=Problem%20Report`)} isLast />
+
+      {/* ── Trust & Safety ─────────────────────────────────────────────── */}
+      <Section title="🛡️ Trust & Safety">
+        <Row
+          icon="flag-outline"
+          color="#FF3B30"
+          title="Report a User"
+          subtitle="Spam, fake accounts, or harmful content"
+          onPress={() =>
+            Alert.alert(
+              '🛡️ Report a User',
+              `To report someone, visit their profile and tap ⋯ → "Report User". You can also report posts, groups, and live room participants the same way.
+
+All reports are reviewed by our team within 24 hours.`,
+              [{ text: 'Got it', style: 'default' }],
+            )
+          }
+        />
+        <Row
+          icon="eye-off-outline"
+          color="#8E44AD"
+          title="Block & Mute"
+          subtitle="Manage who can contact you"
+          onPress={() => Alert.alert('Block & Mute', 'Visit the profile of the person you want to block and tap ⋯ → Block. Blocked users cannot message you or see your content.', [{ text: 'Got it' }])}
+        />
+        <Row
+          icon="shield-checkmark-outline"
+          color="#27AE60"
+          title="KliqTap Community Standards"
+          subtitle="Rules that keep KliqTap safe"
+          onPress={() => Alert.alert('Community Standards', `KliqTap is a platform for real connections. We prohibit:
+
+• Spam, scams, and fake profiles
+• Harassment, threats, or hate speech
+• Illegal activity or controlled substances
+• Content that endangers minors
+
+Violations may result in shadow-banning or permanent removal.`, [{ text: 'Understood' }])}
+          isLast
+        />
+      </Section>
       </View>
       <Text style={[s.groupTitle, { marginLeft: 4 }]}>Frequently Asked</Text>
       {FAQ.map((f, i) => {

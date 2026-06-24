@@ -15,24 +15,67 @@
 //   [ARCH-3] Reconnect logic with exponential backoff
 //   NOTE: Requires backend socket events: 'join_live', 'live_message', 'viewers_update', 'end_live'
 //         Requires backend REST: POST /live/start, POST /live/end/:sessionId
+//
+// [V2.1 — Engineering Audit Fixes]:
+//   [BUG]   `Dimensions.get('window')` was captured ONCE at module load — same
+//           rotation/resize bug found in 10+ sibling files in earlier audit
+//           passes. Fixed with useWindowDimensions().
+//   [BUG]   toggleLive's restart condition only checked STATUS.IDLE/ERROR —
+//           after a server-initiated `stream_ended` event (e.g. an admin or
+//           duplicate-session force-end), status becomes STATUS.ENDED, which
+//           wasn't in that condition. The "START STREAM PULSE" footer button
+//           would then do absolutely nothing on tap — the user couldn't start
+//           a new stream without fully closing and reopening the sheet (the
+//           header's X button still worked as a way out, so not a full
+//           dead-end, but the primary action was non-functional). Added
+//           STATUS.ENDED to the restart condition.
+//   [BUG]   subscribeSocket registered 'viewers_update'/'live_message'/
+//           'stream_ended' listeners with no `.off()` first. This was only
+//           reachable via a retry after a failed/ended stream — which the fix
+//           above now makes reachable — so without this fix, restarting a
+//           stream would stack duplicate listeners (each new message/viewer-
+//           count update firing once per stacked listener). Added `.off()`
+//           before `.on()` for all three events, mirroring the exact pattern
+//           already established and fixed in TopicChat.js two sessions ago.
+//   [BUG]   The 'live_message' listener had no de-duplication — if the
+//           backend broadcasts to all clients including the sender (a common,
+//           simple broadcast pattern), the host would see their own message
+//           twice: once via the optimistic local echo in handleSend, and
+//           again via the server's broadcast. Added a guard skipping messages
+//           where msg.userId matches the current user — the same defensive
+//           pattern already used in TopicChat.js for the identical scenario.
+//   [NOTE]  `reconnectRef` is referenced (cleared on unmount) but never
+//           actually SET anywhere in this file — the claimed "[ARCH-3]
+//           Reconnect logic with exponential backoff" doesn't exist in this
+//           component's code. Whether the underlying socket library (e.g.
+//           Socket.IO) provides automatic reconnection at a lower layer
+//           couldn't be verified without the file where `state.socket` is
+//           configured — flagging this rather than building a custom
+//           reconnection system blind, which risks conflicting with
+//           whatever the socket library already does on its own.
+//   [CLEANUP] FloatingHeart's entrance animation had no unmount cleanup,
+//           unlike the equivalent already-correct pattern in PollVote.js's
+//           HypeEmoji. Trivial, zero-risk addition for consistency.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   TextInput, Keyboard, Platform, ActivityIndicator,
-  Dimensions, Animated, Alert,
+  useWindowDimensions, Animated, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, Camera } from 'expo-camera';
 import { fetchAPI } from '../../store/api';
 import { useAppStore } from '../../store/useAppStore';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
 // ─── Connection status enum ────────────────────────────────────────────────────
 const STATUS = { IDLE: 'idle', CONNECTING: 'connecting', LIVE: 'live', ENDED: 'ended', ERROR: 'error' };
 
 export const LiveRoom = ({ sheet, onClose, isDark }) => {
+  // [FIX] Reactive — re-renders on rotation/resize, unlike Dimensions.get('window')
+  // captured once at module load.
+  const { height: SCREEN_HEIGHT } = useWindowDimensions();
+
   const [hasPermission, setHasPermission]   = useState(null);
   const [status, setStatus]                 = useState(STATUS.IDLE);
   const [viewers, setViewers]               = useState(0);
@@ -95,6 +138,14 @@ export const LiveRoom = ({ sheet, onClose, isDark }) => {
     const sock = socket || socketRef.current;
     if (!sock) return;
 
+    // [FIX] .off() before .on() — without this, restarting a stream (now
+    // reachable after the toggleLive STATUS.ENDED fix below) would stack a
+    // duplicate set of listeners on top of the previous ones. Same pattern
+    // already established and fixed in TopicChat.js two sessions ago.
+    sock.off('viewers_update');
+    sock.off('live_message');
+    sock.off('stream_ended');
+
     // Real viewer count from server
     sock.on('viewers_update', ({ count }) => {
       setViewers(count);
@@ -103,6 +154,11 @@ export const LiveRoom = ({ sheet, onClose, isDark }) => {
     // Real messages from other viewers/host
     sock.on('live_message', (msg) => {
       // msg: { id, username, text, isHost, avatarUrl }
+      // [FIX] Skip the server's echo of the host's own message — it's
+      // already shown via the optimistic local echo in handleSend. Without
+      // this, if the backend broadcasts to all clients including the
+      // sender, the host would see their own message twice.
+      if (msg.userId && msg.userId === user?.id) return;
       setMessages(prev => [...prev.slice(-50), msg]);
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 80);
     });
@@ -175,7 +231,10 @@ export const LiveRoom = ({ sheet, onClose, isDark }) => {
           { text: 'End Stream', style: 'destructive', onPress: endStream },
         ]
       );
-    } else if (status === STATUS.IDLE || status === STATUS.ERROR) {
+    } else if (status === STATUS.IDLE || status === STATUS.ERROR || status === STATUS.ENDED) {
+      // [FIX] STATUS.ENDED added — previously only IDLE/ERROR could restart,
+      // so after a server-initiated stream_ended event the footer button did
+      // nothing at all on tap. See header note for full detail.
       startStream();
     }
   }, [status, startStream, endStream]);
@@ -262,7 +321,7 @@ export const LiveRoom = ({ sheet, onClose, isDark }) => {
   const isLive = status === STATUS.LIVE;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { height: SCREEN_HEIGHT * 0.85 }]}>
       <CameraView style={StyleSheet.absoluteFill} facing="front" ref={cameraRef} />
       <View style={styles.darkDimOverlay} pointerEvents="none" />
 
@@ -412,10 +471,13 @@ const FloatingHeart = ({ emoji }) => {
   const sideAnim  = useRef(new Animated.Value(Math.random() * 30 - 15)).current;
 
   useEffect(() => {
-    Animated.parallel([
+    const anim = Animated.parallel([
       Animated.timing(floatAnim, { toValue: -180, duration: 1800, useNativeDriver: true }),
       Animated.timing(fadeAnim,  { toValue: 0,    duration: 1800, delay: 400, useNativeDriver: true }),
-    ]).start();
+    ]);
+    anim.start();
+    // [CLEANUP] Stop on unmount — matches PollVote.js's HypeEmoji pattern.
+    return () => anim.stop();
   }, []);
 
   return (
@@ -430,7 +492,7 @@ const FloatingHeart = ({ emoji }) => {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container:       { height: SCREEN_HEIGHT * 0.85, width: '100%', backgroundColor: '#000', overflow: 'hidden', borderRadius: 32, borderWidth: 1, borderColor: '#1F1F22' },
+  container:       { width: '100%', backgroundColor: '#000', overflow: 'hidden', borderRadius: 32, borderWidth: 1, borderColor: '#1F1F22' }, // height applied via inline merge at the render call site — see above.
   loadingScreen:   { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
   darkDimOverlay:  { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.15)' },
   uiLayer:         { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between', paddingTop: Platform.OS === 'ios' ? 10 : 15 },

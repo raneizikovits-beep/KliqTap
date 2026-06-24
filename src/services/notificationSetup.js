@@ -5,6 +5,9 @@
 //   [FIX]   Require cycle broken — authSlice no longer imports directly from
 //           this file. Instead, notificationBridge event bus is used:
 //           authSlice emits 'auth:login' → bridge → registerPushTokenAfterLogin()
+//   [FIX]   Expo listener subscriptions now stored in _notifSubscriptions[].
+//           teardownPushNotifications() removes them cleanly — prevents
+//           duplicate listeners on Fast Refresh in dev and on logout/re-login.
 //
 // V8.0 preserved:
 //   - Push → IncomingCallModal via Zustand store
@@ -33,6 +36,7 @@ Notifications.setNotificationHandler({
 
 let cachedDeviceToken = null;
 let listenersInstalled = false;
+let _notifSubscriptions = []; // ⭐️ V8.1: stored so teardownPushNotifications() can .remove() them
 
 // ─────────────────────────────────────────────────────────────────────────
 // ⭐️ V8 HELPER — מציג את מודאל שיחה נכנסת על ידי הצבת state ב-store.
@@ -114,7 +118,10 @@ export async function setupPushNotifications({ isAuthenticated = false } = {}) {
   }
 
   if (!listenersInstalled) {
-    Notifications.addPushTokenListener(async (pushTokenData) => {
+    // ⭐️ V8.1 FIX: כל addXxxListener מחזיר Subscription — חייבים לשמור
+    // ולקרוא .remove() בעת teardown. בלי זה, Fast Refresh ב-dev גורם
+    // לרישום חוזר ללא הסרה של הישנים → duplicate notifications.
+    const tokenSub = Notifications.addPushTokenListener(async (pushTokenData) => {
       if (pushTokenData?.data) {
         cachedDeviceToken = pushTokenData.data;
         await registerTokenWithServer(cachedDeviceToken).catch(() => {});
@@ -123,7 +130,7 @@ export async function setupPushNotifications({ isAuthenticated = false } = {}) {
 
     // ⭐️ V8: Foreground push — אם FCM מגיע בזמן שהאפליקציה פתוחה,
     // למשל שיחה נכנסת — אנחנו רוצים שהמודאל יקפוץ מיד.
-    Notifications.addNotificationReceivedListener((notification) => {
+    const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
       const data = notification.request.content.data ?? {};
       if (data.type === 'INCOMING_CALL') {
         triggerIncomingCallModal(data);
@@ -131,7 +138,7 @@ export async function setupPushNotifications({ isAuthenticated = false } = {}) {
     });
 
     // ניתוב כשהמשתמש לוחץ על התראה
-    Notifications.addNotificationResponseReceivedListener((response) => {
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data ?? {};
 
       if (data.type === 'INCOMING_CALL' && (data.roomId || data.entityId)) {
@@ -143,6 +150,7 @@ export async function setupPushNotifications({ isAuthenticated = false } = {}) {
       }
     });
 
+    _notifSubscriptions = [tokenSub, receivedSub, responseSub];
     listenersInstalled = true;
   }
 
@@ -158,6 +166,15 @@ export async function registerPushTokenAfterLogin() {
   }
 
   return await setupPushNotifications({ isAuthenticated: true });
+}
+
+// ⭐️ V8.1 NEW: מסיר את כל ה-subscriptions בצורה נקייה.
+// קרא לפונקציה זו בעת logout או ב-app teardown כדי למנוע memory leaks
+// ו-duplicate listeners במקרה של hot reload בפיתוח.
+export function teardownPushNotifications() {
+  _notifSubscriptions.forEach(sub => sub?.remove());
+  _notifSubscriptions = [];
+  listenersInstalled = false;
 }
 
 async function requestPermissions() {

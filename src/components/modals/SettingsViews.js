@@ -1,4 +1,29 @@
 // client/src/components/modals/SettingsViews.js
+//
+// [V1.1 — Engineering Audit Fixes]:
+//   [FIX HIGH] NotificationSettings: 2 of 5 toggles ("Group Updates", "Mentions")
+//              were hard-locked via `value={true}` + `onValueChange={() => {}}` —
+//              a no-op handler. These switches looked interactive but tapping
+//              them did absolutely nothing; React Native's Switch would just
+//              snap back to its current value. Converted to proper local state,
+//              matching the other 3 toggles in this same component.
+//   [NOTE]     This whole component is local-state-only with zero connection to
+//              useAppStore — unlike its sibling PrivacySettings below (which
+//              correctly calls the real updateUserProfile action), every toggle
+//              here resets to its hardcoded default the moment this screen is
+//              unmounted and remounted. There's no confirmed backend schema for
+//              these specific notification-preference fields, so rather than
+//              guessing at field names for updateUserProfile(), this is flagged
+//              here for the team to wire once the real fields are confirmed.
+//   [FIX HIGH] SecuritySettings: all 3 buttons (Change Password, Enable 2FA,
+//              Log Out Other Sessions) showed an Alert claiming the action had
+//              succeeded ("Email sent...", "All other sessions logged out.")
+//              when none of them do anything at all. This is the most severe
+//              class of false-success claim in this audit given the security
+//              stakes — a user could believe a lost device's sessions were
+//              terminated when they weren't. Reworded to be honest about the
+//              current state instead of claiming a security action occurred.
+
 import React, { useState } from 'react';
 import { View, Text, Switch, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { styles as globalStyles } from '../../constants/styles';
@@ -19,6 +44,10 @@ const ToggleRow = ({ label, value, onValueChange }) => (
 
 export const NotificationSettings = () => {
     const [pushEnabled, setPushEnabled] = useState(true);
+    // [FIX HIGH] Were hard-locked to `true` with a no-op onValueChange — the
+    // switches looked tappable but did nothing. Now properly stateful.
+    const [groupUpdatesEnabled, setGroupUpdatesEnabled] = useState(true);
+    const [mentionsEnabled, setMentionsEnabled] = useState(true);
     const [emailEnabled, setEmailEnabled] = useState(false);
     const [marketingEnabled, setMarketingEnabled] = useState(false);
 
@@ -26,8 +55,8 @@ export const NotificationSettings = () => {
         <View style={localStyles.container}>
             <Text style={globalStyles.h2}>Push Notifications</Text>
             <ToggleRow label="New Messages" value={pushEnabled} onValueChange={setPushEnabled} />
-            <ToggleRow label="Group Updates" value={true} onValueChange={() => {}} />
-            <ToggleRow label="Mentions" value={true} onValueChange={() => {}} />
+            <ToggleRow label="Group Updates" value={groupUpdatesEnabled} onValueChange={setGroupUpdatesEnabled} />
+            <ToggleRow label="Mentions" value={mentionsEnabled} onValueChange={setMentionsEnabled} />
             
             <View style={localStyles.spacer} />
             <Text style={globalStyles.h2}>Email Notifications</Text>
@@ -82,17 +111,23 @@ export const PrivacySettings = () => {
 };
 
 export const SecuritySettings = () => {
+    // [FIX HIGH] All three Alerts below previously claimed a security action had
+    // already succeeded ("Email sent...", "All other sessions logged out.") when
+    // none of them do anything. No confirmed backend endpoint exists for any of
+    // these yet, so claiming success here would be actively misleading about the
+    // user's account security state — e.g. believing a lost device was logged
+    // out when it wasn't. Reworded to be honest about the current state.
     return (
         <View style={localStyles.container}>
-            <TouchableOpacity style={localStyles.actionBtn} onPress={() => Alert.alert("Change Password", "Email sent to reset password.")}>
+            <TouchableOpacity style={localStyles.actionBtn} onPress={() => Alert.alert("Change Password", "This feature isn't available yet. Check back soon!")}>
                 <Text style={localStyles.actionBtnText}>Change Password</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={localStyles.actionBtn} onPress={() => Alert.alert("2FA", "Two-Factor Authentication setup...")}>
+            <TouchableOpacity style={localStyles.actionBtn} onPress={() => Alert.alert("Two-Factor Authentication", "This feature isn't available yet. Check back soon!")}>
                 <Text style={localStyles.actionBtnText}>Enable Two-Factor Auth</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={[localStyles.actionBtn, localStyles.dangerBorder]} onPress={() => Alert.alert("Sessions", "All other sessions logged out.")}>
+            <TouchableOpacity style={[localStyles.actionBtn, localStyles.dangerBorder]} onPress={() => Alert.alert("Log Out Other Sessions", "This feature isn't available yet. Check back soon!")}>
                 <Text style={[localStyles.actionBtnText, localStyles.dangerText]}>Log Out Other Sessions</Text>
             </TouchableOpacity>
         </View>

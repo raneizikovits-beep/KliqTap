@@ -1,17 +1,31 @@
 // client/src/components/KliqTapLogo.js
-import React, { memo } from 'react';
+import React, { memo, useRef } from 'react';
 import { Image, TouchableOpacity } from 'react-native';
-import { useNavigation } from '@react-navigation/native'; // 👈 ייבוא כלי הניווט
+import { useNavigation } from '@react-navigation/native';
 
 const KliqTapLogo = ({ style }) => {
-  const navigation = useNavigation(); // 👈 הפעלת הניווט
+  const navigation = useNavigation();
+  const timerRef = useRef(null);
+
+  const handlePressIn = () => {
+    timerRef.current = setTimeout(() => {
+      navigation.navigate('AdminNotice');
+    }, 10000); // 10 שניות בדיוק
+  };
+
+  const handlePressOut = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
 
   return (
     <TouchableOpacity 
       style={style}
-      activeOpacity={1} // מונע מהלוגו לההבהב בלחיצה רגילה כדי שאף אחד לא יחשוד
-      delayLongPress={800} // זמן לחיצה (0.8 שניות)
-      onLongPress={() => navigation.navigate('AdminNotice')} // 👈 הדלת הסודית שלנו!
+      activeOpacity={1}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
     >
       <Image 
         source={require('../assets/splash-icon.png')} 

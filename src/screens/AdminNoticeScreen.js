@@ -52,6 +52,7 @@ const AdminNoticeScreen = () => {
   const [targetUserId, setTargetUserId] = useState('');
   const [targetContentId, setTargetContentId] = useState('');
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
+  const [isBanningUser, setIsBanningUser] = useState(false);
 
   // --- Security State ---
   const [newPin, setNewPin] = useState('');
@@ -179,6 +180,27 @@ const AdminNoticeScreen = () => {
       setIsSendingNotification(false);
     }
   }, [customNotificationText, notificationTargetUserId]);
+
+  // ⭐️ FIX [DEMO→REAL]: this used to be `Alert.alert('Ban Executed', ...)` with
+  // no API call at all — the user was never actually banned. Now calls the
+  // real admin/:targetId/ban endpoint (wired to Supabase Auth's native
+  // banned_until mechanism). Mute/Warn below are intentionally left as-is —
+  // there's no backend support for those yet (no mutedUntil/warning field
+  // exists), so faking success there would be worse than an honest "not
+  // available yet" — see chat for what's needed to build those for real.
+  const handleBanUser = useCallback(async () => {
+    if (!targetUserId) return Alert.alert('Error', 'Target ID required');
+    setIsBanningUser(true);
+    try {
+      await fetchAPI(`/users/admin/${targetUserId}/ban`, { method: 'PATCH', body: JSON.stringify({}) });
+      Alert.alert('Ban Executed', `User ${targetUserId} has been banned.`);
+      setTargetUserId('');
+    } catch (error) {
+      Alert.alert('Error', error?.message || 'Failed to ban user.');
+    } finally {
+      setIsBanningUser(false);
+    }
+  }, [targetUserId]);
 
   // ============================================================
   // === Render ===
@@ -335,12 +357,14 @@ const AdminNoticeScreen = () => {
             />
 
             <View style={[styles.row, { marginTop: 15 }]}>
-              <TouchableOpacity style={[styles.chip, { backgroundColor: '#551111', borderColor: '#FF4757' }]} onPress={() => {
-                if (!targetUserId) return Alert.alert('Error', 'Target ID required');
-                Alert.alert('Ban Executed', `User ${targetUserId} has been banned.`);
-                setTargetUserId('');
-              }}>
-                <Text style={[styles.chipText, { color: '#FF4757' }]}>Ban User</Text>
+              <TouchableOpacity
+                style={[styles.chip, { backgroundColor: '#551111', borderColor: '#FF4757' }]}
+                onPress={handleBanUser}
+                disabled={isBanningUser}
+              >
+                {isBanningUser
+                  ? <ActivityIndicator color="#FF4757" size="small" />
+                  : <Text style={[styles.chipText, { color: '#FF4757' }]}>Ban User</Text>}
               </TouchableOpacity>
 
               <TouchableOpacity style={[styles.chip, { backgroundColor: '#333' }]} onPress={() => {

@@ -1,7 +1,12 @@
 // client/src/components/GroupUpdatesBar.js
-// ⭐️ V2.0 — Removed redundant DEMO_GROUP_UPDATES from deps, added dark mode support ⭐️
+// ⭐️ V2.1 — Fix undefined.. bug in onLongPress intent string ⭐️
 //
-// CHANGES from V1:
+// CHANGES from V2.0:
+//   [FIX LOW]  onLongPress handler: `item.text?.substring(0, 30) + '...'` produced
+//              the literal string "undefined..." when item.text was null or absent.
+//              Fixed to `item.text ? item.text.substring(0, 30) + '...' : ''`.
+//
+// [Previous V2.0]:
 //   [FIX-G]  Removed DEMO_GROUP_UPDATES from useMemo deps (it's a module constant).
 //   [FIX-S1] Added dark mode awareness via userSettings.darkMode.
 //   [DRY]    Add Update item as module-level constant builder.
@@ -125,8 +130,10 @@ const GroupUpdatesBar = ({ onOpenStory, onOpenProfile, onAddStory }) => {
               onOpenStory(null);
               onOpenProfile({
                 name: item.name,
-                img: item.img,
-                intent: item.text?.substring(0, 30) + '...',
+                img:  item.img,
+                // [FIX LOW] item.text can be null/undefined; `?.substring` returns undefined,
+                // and `undefined + '...'` = `'undefined...'`. Guard explicitly.
+                intent: item.text ? item.text.substring(0, 30) + '...' : '',
               });
             }}
           />

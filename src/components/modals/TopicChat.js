@@ -37,6 +37,15 @@
  * [DESIGN] Added: team score bars (live tally), message timestamps,
  *          colored team badge on each message, gradient background for
  *          selected-team header, animated score update.
+ *
+ * [V1.1 — Engineering Audit Fix]:
+ * [BUG]   `Dimensions.get('window')` was captured ONCE at module load time and
+ *         baked into `dynamicHeight`'s calculation. On device rotation or
+ *         browser window resize (this app also runs on web), the sheet height
+ *         stayed locked to whatever the screen size was when the JS bundle
+ *         first loaded. Fixed with the reactive `useWindowDimensions()` hook,
+ *         which re-renders the component whenever the window/screen actually
+ *         changes size.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
@@ -44,12 +53,11 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
     TextInput, Keyboard, Platform, ScrollView,
-    Animated, Dimensions,
+    Animated, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppStore } from '../../store/useAppStore';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
 
 // ── Socket context (provide this at the app level via SocketProvider) ─────
 // import { SocketContext } from '../../contexts/SocketContext';
@@ -62,6 +70,10 @@ const TEAMS = {
 // ─────────────────────────────────────────────────────────────────────────
 export const TopicChat = ({ sheet, onClose, isDark, socket: propSocket }) => {
     const trend = sheet?.trend || '#TrendingDebate';
+
+    // [FIX] Reactive — re-renders on rotation/resize, unlike Dimensions.get('window')
+    // captured once at module load.
+    const { height: SCREEN_HEIGHT } = useWindowDimensions();
 
     // ── State ─────────────────────────────────────────────────────────────
     const [message,       setMessage]       = useState('');
@@ -190,6 +202,7 @@ export const TopicChat = ({ sheet, onClose, isDark, socket: propSocket }) => {
         setMessage('');
 
         if (activeSocket) {
+            trackEvent('debate_message_sent', { team: selectedTeam }); // 👈 הדיווח
             activeSocket.emit('send_trend_message', {
                 trend,
                 text: newMsg.text,
@@ -282,7 +295,10 @@ export const TopicChat = ({ sheet, onClose, isDark, socket: propSocket }) => {
                             {Object.values(TEAMS).map(team => (
                                 <TouchableOpacity
                                     key={team.id}
-                                    onPress={() => setSelectedTeam(team.id)}
+                                    onPress={() => {
+                                      trackEvent('debate_team_selected', { teamId: team.id }); // 👈 הדיווח
+                                      setSelectedTeam(team.id);
+                                    }}
                                     style={[styles.teamBtn, { backgroundColor: team.color }]}
                                     accessibilityLabel={`Join team ${team.label}`}
                                 >

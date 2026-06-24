@@ -208,11 +208,46 @@ export default function AlertsScreen({ setSecondSheet, setThirdSheet }) {
     }
   }, [fetchNotifications]);
 
-  const handleAction = useCallback((type, item) => {
-    if (type === 'accept' && setThirdSheet) {
-      setThirdSheet({ title: 'Joined!', body: 'You have successfully joined the group.' });
+  // ⭐️ FIX [DEMO→REAL]:
+  //   - 'accept' used to show a "Joined!" toast with NO API call at all —
+  //     the user was never actually added to anything. Now calls the real
+  //     POST /communities/join for GROUP_REQUEST notifications, using
+  //     item.entityId as the communityId (the same generic entity-pointer
+  //     field already referenced in the commented-out deep-linking block
+  //     below for other notification types).
+  //     ⚠️ INVITE-type notifications are deliberately left unhandled here —
+  //     there's no confirmed backend meaning/endpoint for what an INVITE
+  //     accept should do (it may not be the same as joining a community),
+  //     so faking it would risk silently doing the wrong thing.
+  //   - 'decline' used to be a complete no-op (button did nothing at all).
+  //     There's no "decline" endpoint anywhere on the backend for invites —
+  //     and there doesn't need to be one: declining just means "don't join",
+  //     so marking the notification read (same real action a normal tap
+  //     does) is an honest, correct behavior, not a faked success message.
+  const handleAction = useCallback(async (type, item) => {
+    if (type === 'accept') {
+      if (item.type === 'GROUP_REQUEST' && item.entityId) {
+        try {
+          await fetchAPI('/communities/join', {
+            method: 'POST',
+            body: JSON.stringify({ communityId: item.entityId }),
+          });
+          if (markNotificationRead) markNotificationRead(item.id);
+          if (setThirdSheet) setThirdSheet({ title: 'Joined!', body: 'You have successfully joined the group.' });
+        } catch (error) {
+          if (__DEV__) console.warn('[AlertsScreen] Failed to accept group request:', error);
+          if (setThirdSheet) setThirdSheet({ title: 'Error', body: 'Could not join the group. Please try again.' });
+        }
+        return;
+      }
+      if (__DEV__) console.warn(`[AlertsScreen] No accept handler wired yet for notification type "${item.type}".`);
+      return;
     }
-  }, [setThirdSheet]);
+
+    if (type === 'decline' && markNotificationRead) {
+      markNotificationRead(item.id);
+    }
+  }, [setThirdSheet, markNotificationRead]);
 
   // ─────────────────────────────────────────────────────────────────────
   // ⭐️ V9.1: Just mark as read. No navigation. No popup.

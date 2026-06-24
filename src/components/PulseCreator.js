@@ -8,6 +8,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { brand } from '../constants/data';
+import { trackEvent } from '../utils/analytics'; // 👈 הייבוא החדש שלנו
+
 
 const PulseCreator = ({ user, activePulse, onOpenLive, onOpenCamera, onSendPulse, isPosting }) => {
   const [pulseText, setPulseText] = useState('');
@@ -22,11 +24,11 @@ const PulseCreator = ({ user, activePulse, onOpenLive, onOpenCamera, onSendPulse
   // ⭐️ PERF: Memoize action handler
   const handleSend = useCallback(() => {
     if (pulseText.trim()) {
+      trackEvent('pulse_sent', { textLength: pulseText.trim().length }); // 👈 הדיווח מודד השלמת יצירה ואת אורך הטקסט
       onSendPulse(pulseText.trim());
       setPulseText('');
     }
   }, [pulseText, onSendPulse]);
-
   return (
     <View style={styles.container}>
       <ImageBackground 

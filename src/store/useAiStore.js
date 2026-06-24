@@ -133,7 +133,7 @@ export const useAiStore = create((set, get) => ({
     sendMessage: async (token, userAgentId, message) => {
     if (!token || !userAgentId || !message?.trim()) return;
 
-    console.log('🆔 SENDING userAgentId:', userAgentId);   // ← הוסף את זה
+    if (__DEV__) console.log('[useAiStore] sendMessage userAgentId:', userAgentId);
     
     const trimmedMessage = message.trim();
     const userMsg = {

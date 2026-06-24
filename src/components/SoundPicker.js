@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
-
+import { trackEvent } from '../utils/analytics'; // 👈 הייבוא החדש שלנו
 import localSounds from './sounds.json';
 
 const ACCENT = '#7C5CFF';
@@ -89,6 +89,7 @@ export const SoundPicker = ({ visible, onClose, onSelect }) => {
 
   const choose = useCallback(async (sound) => {
     await stopPreview();
+    trackEvent('sound_selected', { soundId: sound.id, category: sound.category }); // 👈 מעקב אחרי בחירת מוזיקה
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     onSelect?.(sound);
     onClose?.();

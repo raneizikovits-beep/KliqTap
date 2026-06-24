@@ -1,5 +1,5 @@
 // client/src/store/api.ts
-// ⭐️ KliqMind V4.3 PRODUCTION: Secure Anti-Loop Token Refresh & Concurrency Fix ⭐️
+// ⭐️ KliqMind V4.5 PRODUCTION: Fixed Refresh Token Rotation & Session Drops ⭐️
 
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
@@ -8,22 +8,28 @@ export const API_BASE_URL = (process.env as any).EXPO_PUBLIC_API_URL || 'https:/
 
 const ACCESS_TOKEN_KEY = 'auth_access_token';
 const REFRESH_TOKEN_KEY = 'auth_refresh_token';
-const DEFAULT_TIMEOUT_MS = 15_000; 
+const DEFAULT_TIMEOUT_MS = 15_000;
+
+// ⭐️ Proactive refresh: נרענן 5 דקות לפני שהטוקן פג, לא אחרי
+const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 let currentAccessToken: string | null = null;
 let currentRefreshToken: string | null = null;
 let onAuthFailureCallback: (() => void) | null = null;
 
 let isRefreshing: boolean = false;
-let failedQueue: Array<(token: string | null) => void> = [];
 
-// --- Type Definitions ------------------------------------------------------
+// ⭐️ Queue עם resolve/reject נפרד — תיקון Race Condition
+type QueueEntry = { resolve: () => void; reject: (err: any) => void };
+let failedQueue: QueueEntry[] = [];
+
+// --- Type Definitions -------------------------------------------------------
 
 export interface FetchAPIOptions extends Omit<RequestInit, 'body'> {
-    auth?: boolean;          
+    auth?: boolean;
     body?: BodyInit | object | null;
-    timeout?: number;        
-} 
+    timeout?: number;
+}
 
 export class APIError extends Error {
     status: number;
@@ -34,11 +40,11 @@ export class APIError extends Error {
         this.status = status;
         this.payload = payload;
     }
-} 
+}
 
-// --- 1. Context & Storage Helpers -------------------------------
+// --- 1. Context & Storage Helpers -------------------------------------------
 
-const isWebSafe = typeof window !== 'undefined' && Platform.OS === 'web'; 
+const isWebSafe = typeof window !== 'undefined' && Platform.OS === 'web';
 
 const getDeviceContext = () => {
     try {
@@ -60,7 +66,7 @@ const saveTokensToStorage = async (access: string | null, refresh?: string | nul
     } catch (e) {
         if (__DEV__) console.error('[API Storage] Failed to save tokens:', e);
     }
-}; 
+};
 
 const deleteTokensFromStorage = async (): Promise<void> => {
     try {
@@ -74,19 +80,47 @@ const deleteTokensFromStorage = async (): Promise<void> => {
     } catch (e) {
         if (__DEV__) console.error('[API Storage] Failed to delete tokens:', e);
     }
-}; 
+};
 
-const subscribeTokenRefresh = (cb: (token: string | null) => void): Promise<void> =>
-    new Promise<void>(resolve => {
-        failedQueue.push((token) => { cb(token); resolve(); });
-    }); 
+const subscribeTokenRefresh = (): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+    });
 
-const processQueue = (token: string | null = null) => {
-    failedQueue.forEach(prom => prom(token));
+const processQueue = (error: any = null): void => {
+    failedQueue.forEach(({ resolve, reject }) => {
+        if (error) reject(error);
+        else resolve();
+    });
     failedQueue = [];
-}; 
+};
 
-// --- 2. Exported Utilities -------------------------------------------------
+// --- 2. JWT Utilities (Proactive Refresh) -----------------------------------
+
+const decodeJwtPayload = (token: string): { exp?: number } | null => {
+    try {
+        const base64Url = token.split('.')[1];
+        if (!base64Url) return null;
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonStr = typeof atob === 'function'
+            ? atob(base64)
+            : (typeof (globalThis as any).Buffer === 'function'
+                ? (globalThis as any).Buffer.from(base64, 'base64').toString('utf8')
+                : '');
+        return JSON.parse(jsonStr);
+    } catch {
+        return null;
+    }
+};
+
+export const isTokenExpiringSoon = (): boolean => {
+    if (!currentAccessToken) return true;
+    const payload = decodeJwtPayload(currentAccessToken);
+    if (!payload?.exp) return false;
+    return Date.now() >= payload.exp * 1000 - TOKEN_REFRESH_BUFFER_MS;
+};
+
+// --- 3. Exported Utilities --------------------------------------------------
 
 export const setAuthFailureCallback = (callback: (() => void) | null): void => {
     onAuthFailureCallback = callback;
@@ -96,7 +130,7 @@ export const setAuthTokens = (access: string | null, refresh: string | null): vo
     currentAccessToken = access;
     currentRefreshToken = refresh;
     saveTokensToStorage(access, refresh);
-}; 
+};
 
 export const clearLocalTokens = (): void => {
     currentAccessToken = null;
@@ -122,9 +156,9 @@ export const loadTokensFromStorage = async (): Promise<{
         if (__DEV__) console.error('[API Storage] Failed to load tokens:', e);
     }
     return { currentAccessToken, currentRefreshToken };
-}; 
+};
 
-// --- 3. Token Refresh Logic ------------------------------------------------
+// --- 4. Token Refresh Logic -------------------------------------------------
 
 const attemptTokenRefresh = async (): Promise<string> => {
     if (!currentRefreshToken) throw new APIError('No refresh token available.', 401);
@@ -144,21 +178,54 @@ const attemptTokenRefresh = async (): Promise<string> => {
         });
 
         if (!response.ok) {
-            // ⭐️ קטיעת לולאה: מנקים טוקנים סינכרונית מייד כשנכשל ה-Refresh ⭐️
             clearLocalTokens();
             if (onAuthFailureCallback) onAuthFailureCallback();
             throw new APIError('Session expired.', response.status);
         }
+        
         const data = await response.json();
-        const newAccessToken: string = data.access_token;
-        setAuthTokens(newAccessToken, currentRefreshToken);
+        
+        // ⭐️ התיקון הגדול: קוראים את שני הטוקנים מהשרת בכל התצורות האפשריות
+        // ושומרים את ה-refresh token החדש שהשרת הנפיק!
+        const newAccessToken: string = data.access_token || data.accessToken;
+        const newRefreshToken: string = data.refresh_token || data.refreshToken || currentRefreshToken;
+
+        if (!newAccessToken) {
+            throw new Error("No valid token received from server");
+        }
+
+        setAuthTokens(newAccessToken, newRefreshToken);
         return newAccessToken;
     } finally {
         clearTimeout(timeoutId);
     }
-}; 
+};
 
-// --- 4. Header Construction (centralized) ----------------------------------
+export const ensureFreshToken = async (): Promise<void> => {
+    if (!currentAccessToken || !currentRefreshToken) return;
+    if (!isTokenExpiringSoon()) return;
+
+    if (isRefreshing) {
+        try {
+            await subscribeTokenRefresh();
+        } catch {}
+        return;
+    }
+
+    isRefreshing = true;
+    try {
+        await attemptTokenRefresh();
+        processQueue(); 
+        if (__DEV__) console.log('[API] ✅ Proactive token refresh successful.');
+    } catch (e) {
+        processQueue(e);
+        if (__DEV__) console.warn('[API] ⚠️ Proactive refresh failed — reactive path will handle it:', e);
+    } finally {
+        isRefreshing = false;
+    }
+};
+
+// --- 5. Header Construction (centralized) -----------------------------------
 
 const buildHeaders = (
     optionsHeaders: HeadersInit | undefined,
@@ -168,8 +235,8 @@ const buildHeaders = (
     const headers = new Headers(optionsHeaders);
 
     const isFormData = body && typeof body === 'object' && (
-        body instanceof FormData || 
-        body.constructor?.name === 'FormData' || 
+        body instanceof FormData ||
+        body.constructor?.name === 'FormData' ||
         typeof (body as any).append === 'function'
     );
 
@@ -184,9 +251,9 @@ const buildHeaders = (
     }
 
     return headers;
-}; 
+};
 
-// --- 5. Main Fetch Wrapper -------------------------------------------------
+// --- 6. Main Fetch Wrapper --------------------------------------------------
 
 export async function fetchAPI<T = any>(
     endpoint: string,
@@ -194,24 +261,24 @@ export async function fetchAPI<T = any>(
 ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
     const skipAuth = options.auth === false;
-    const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS; 
+    const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
 
     let normalizedBody: BodyInit | null | undefined = undefined;
     if (options.body !== undefined && options.body !== null) {
         const isFormData = options.body && typeof options.body === 'object' && (
-            options.body instanceof FormData || 
-            options.body.constructor?.name === 'FormData' || 
+            options.body instanceof FormData ||
+            options.body.constructor?.name === 'FormData' ||
             typeof (options.body as any).append === 'function'
         );
-        
+
         const isString = typeof options.body === 'string';
-        
+
         if (isFormData || isString) {
             normalizedBody = options.body as BodyInit;
         } else {
             normalizedBody = JSON.stringify(options.body);
         }
-    } 
+    }
 
     const executeFetch = async (): Promise<Response> => {
         const controller = new AbortController();
@@ -226,9 +293,13 @@ export async function fetchAPI<T = any>(
         } finally {
             clearTimeout(timeoutId);
         }
-    }; 
+    };
 
     try {
+        if (!skipAuth && currentAccessToken && currentRefreshToken) {
+            await ensureFreshToken();
+        }
+
         let response = await executeFetch();
 
         if (response.status === 401 && !skipAuth) {
@@ -238,32 +309,35 @@ export async function fetchAPI<T = any>(
             }
 
             if (isRefreshing) {
-                // המתנה לרענון הנוכחי שמבוצע על ידי הבקשה הראשונה
-                await subscribeTokenRefresh(() => {});
+                await subscribeTokenRefresh();
                 return fetchAPI<T>(endpoint, options);
             }
 
             isRefreshing = true;
             try {
                 await attemptTokenRefresh();
-                processQueue(currentAccessToken);
-                response = await executeFetch(); // קריאה חוזרת עם הטוקן החדש
-                
-                // ⭐️ הגנה מפני טוקן רענון דפוק: אם גם אחרי ה-Refresh המכשיר מקבל 401, עוצרים הכל! ⭐️
+                processQueue(); 
+                response = await executeFetch(); 
+
                 if (response.status === 401) {
                     clearLocalTokens();
                     if (onAuthFailureCallback) onAuthFailureCallback();
                     throw new APIError('Unauthorized even after token refresh.', 401);
                 }
-            } catch (refreshError) {
-                // אם הרענון נכשל, מנקים מייד את הטוקנים סינכרונית כדי למנוע את מרוץ הזיכרון
-                clearLocalTokens();
-                processQueue(null);
+            } catch (refreshError: any) {
+                const isNetworkTimeout =
+                    refreshError?.name === 'AbortError' || refreshError?.status === 0;
+                if (!isNetworkTimeout) {
+                    clearLocalTokens();
+                    // ⭐️ התיקון: אנחנו דואגים לקרוא ל-Callback כדי שהמשתמש יתנתק באמת אם הטוקן מת
+                    if (onAuthFailureCallback) onAuthFailureCallback();
+                }
+                processQueue(refreshError);
                 throw refreshError;
             } finally {
                 isRefreshing = false;
             }
-        } 
+        }
 
         if (!response.ok) {
             const errorBody = await response.json().catch(() => null);
@@ -271,7 +345,7 @@ export async function fetchAPI<T = any>(
                 (errorBody && (errorBody.message || errorBody.error)) ||
                 `Request failed with status ${response.status}`;
             throw new APIError(message, response.status, errorBody);
-        } 
+        }
 
         if (response.status === 204) return null as unknown as T;
 

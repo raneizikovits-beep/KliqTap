@@ -26,6 +26,7 @@ import {
   Platform,
   RefreshControl,
   ImageBackground,
+  Alert,
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +34,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useAppStore } from '../store/useAppStore';
 import { fetchAPI } from '../store/api';
 import * as Data from '../constants/data';
+import { trackEvent } from '../utils/analytics'; 
+
 
 // ─── Optional deps ──────────────────────────────────────────────────────────────
 let LinearGradient;
@@ -61,61 +64,6 @@ try {
 // ═══════════════════════════════════════════════════════════════════════════════
 const { width: W } = Dimensions.get('window');
 const IS_IOS = Platform.OS === 'ios';
-
-const ARENA_CHALLENGES = [
-  {
-    id: 'c1',
-    title: '#LamiBai Food King',
-    subtitle: 'Drop your most jaw-dropping Cebu dish',
-    icon: 'restaurant',
-    emoji: '🍖',
-    colors: ['#FF6B35', '#C0392B', '#8B0000'],
-    accentColor: '#FF6B35',
-    endsAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 6 * 60 * 60 * 1000),
-    prize: '500 Kliq Points + KING badge',
-    entries: 84,
-    active: true,
-  },
-  {
-    id: 'c2',
-    title: '#KliqLift Streak',
-    subtitle: '5-day gym consistency challenge',
-    icon: 'barbell',
-    emoji: '🏋️',
-    colors: ['#0072FF', '#00C9FF', '#00E5A0'],
-    accentColor: '#00C9FF',
-    endsAt: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000),
-    prize: 'Iron Kliq status + 750 Points',
-    entries: 51,
-    active: true,
-  },
-  {
-    id: 'c3',
-    title: '#SingForKliq Anthem',
-    subtitle: 'Best videoke cover this week',
-    icon: 'musical-notes',
-    emoji: '🎤',
-    colors: ['#8E2DE2', '#FF2D55', '#FF6B35'],
-    accentColor: '#FF2D55',
-    endsAt: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000),
-    prize: 'Stage Crown + 1,000 Points',
-    entries: 132,
-    active: true,
-  },
-  {
-    id: 'c4',
-    title: '#VibeCheckCebu',
-    subtitle: 'Best CYBER/NOIR filter photo',
-    icon: 'camera',
-    emoji: '📸',
-    colors: ['#2C3E50', '#4A00E0', '#8E2DE2'],
-    accentColor: '#8E2DE2',
-    endsAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-    prize: 'Lens Legend badge + 600 Points',
-    entries: 29,
-    active: true,
-  },
-];
 
 const MOCK_LEADERBOARD = [
   { rank: 1,  username: '@lechon_queen',  points: 1840, avatar: null, streak: 12, badge: '👑' },
@@ -175,7 +123,7 @@ const useCountdown = (endsAt) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  COUNTDOWN UNIT
+//  COUNTDOWN UNIT - ⭐️ תוקן באג הפריסה של המספרים בעזרת flex: 1 ⭐️
 // ═══════════════════════════════════════════════════════════════════════════════
 const CountUnit = React.memo(({ value, label, accentColor }) => {
   const flipAnim = useRef(new Animated.Value(1)).current;
@@ -192,31 +140,35 @@ const CountUnit = React.memo(({ value, label, accentColor }) => {
   const padded = String(value).padStart(2, '0');
 
   return (
-    <View style={{ alignItems: 'center', minWidth: 52 }}>
+    <View style={{ flex: 1, alignItems: 'center' }}> 
       <Animated.View
         style={{
           transform: [{ scale: flipAnim }],
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          borderRadius: 14,
-          borderWidth: 1,
-          borderColor: accentColor + '44',
-          paddingVertical: 10,
-          paddingHorizontal: 14,
-          marginBottom: 6,
-          minWidth: 52,
+          backgroundColor: 'rgba(15, 20, 35, 0.75)', 
+          borderRadius: 10,
+          borderWidth: 1.5,
+          borderColor: accentColor, 
+          paddingVertical: 12,
+          width: '100%', 
+          maxWidth: 64, // מונע מהם להיות ענקיים באייפד
           alignItems: 'center',
+          justifyContent: 'center',
           shadowColor: accentColor,
-          shadowOffset: { width: 0, height: 3 },
-          shadowOpacity: 0.35,
-          shadowRadius: 6,
-          elevation: 4,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.5,
+          shadowRadius: 8,
+          elevation: 6,
         }}
       >
-        <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 26, letterSpacing: -1, fontVariant: ['tabular-nums'] }}>
+        <Text 
+          adjustsFontSizeToFit={true} 
+          numberOfLines={1}
+          style={{ color: '#FFF', fontWeight: '900', fontSize: 22, letterSpacing: -1, fontVariant: ['tabular-nums'] }}
+        >
           {padded}
         </Text>
       </Animated.View>
-      <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: '800', letterSpacing: 1.5 }}>
+      <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginTop: 4 }}>
         {label}
       </Text>
     </View>
@@ -224,7 +176,9 @@ const CountUnit = React.memo(({ value, label, accentColor }) => {
 });
 
 const TimeSeparator = () => (
-  <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 22, fontWeight: '900', marginBottom: 18, marginHorizontal: 2 }}>:</Text>
+  <View style={{ paddingHorizontal: 2, paddingBottom: 16 }}>
+    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 20, fontWeight: '900' }}>:</Text>
+  </View>
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -294,11 +248,11 @@ const HeroChallengeCard = React.memo(({ challenge, onSubmit, userEntered }) => {
           {/* Top row: badge + entries */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
             <View style={aStyles.activePill}>
-              <View style={[aStyles.activeDot, { backgroundColor: isUrgent ? '#FF2D55' : '#00E5A0' }]} />
-              <Text style={aStyles.activePillText}>{isUrgent ? 'ENDS SOON' : 'ACTIVE'}</Text>
+              <View style={[aStyles.activeDot, { backgroundColor: isUrgent ? '#FFD200' : '#00E5A0' }]} />
+              <Text style={aStyles.activePillText}>{isUrgent ? 'ENDS SOON' : 'ACTIVE BATTLE'}</Text>
             </View>
             <View style={aStyles.entriesChip}>
-              <Ionicons name="people" size={11} color="rgba(255,255,255,0.8)" />
+              <Ionicons name="people" size={12} color="rgba(255,255,255,0.9)" />
               <Text style={aStyles.entriesText}>{fmtNum(challenge.entries)} in</Text>
             </View>
           </View>
@@ -339,12 +293,12 @@ const HeroChallengeCard = React.memo(({ challenge, onSubmit, userEntered }) => {
             ]}
           >
             <Ionicons
-              name={userEntered ? 'checkmark-circle' : 'add-circle'}
+              name={userEntered ? 'checkmark-circle' : 'flash'}
               size={20}
               color={userEntered ? '#00E5A0' : '#FFF'}
             />
             <Text style={[aStyles.heroCTAText, userEntered && { color: '#00E5A0' }]}>
-              {userEntered ? 'ENTRY SUBMITTED ✓' : 'SUBMIT YOUR ENTRY'}
+              {userEntered ? 'ENTRY SUBMITTED ✓' : 'ENTER THE ARENA'}
             </Text>
           </TouchableOpacity>
         </LinearGradient>
@@ -370,7 +324,7 @@ const MiniChallengeCard = React.memo(({ challenge, onPress, isSelected }) => {
           end={{ x: 1, y: 1.5 }}
           style={[
             aStyles.miniCard,
-            isSelected && { borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)' },
+            isSelected && { borderWidth: 2, borderColor: '#FFF', shadowColor: challenge.accentColor, shadowOpacity: 0.8, shadowRadius: 10 },
           ]}
         >
           {isUrgent && (
@@ -398,7 +352,7 @@ const MiniChallengeCard = React.memo(({ challenge, onPress, isSelected }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 //  LEADERBOARD ROW
 // ═══════════════════════════════════════════════════════════════════════════════
-const LeaderboardRow = React.memo(({ entry, isMe, delay = 0 }) => {
+const LeaderboardRow = React.memo(({ entry, isMe, delay = 0, theme, isDark }) => {
   const slideX  = useRef(new Animated.Value(-40)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const barW    = useRef(new Animated.Value(0)).current;
@@ -417,7 +371,7 @@ const LeaderboardRow = React.memo(({ entry, isMe, delay = 0 }) => {
     return () => clearTimeout(t);
   }, [slideX, opacity, barW, delay, entry.points]);
 
-  const barColor = entry.rank === 1 ? '#FFD200' : entry.rank === 2 ? '#C0C0C0' : entry.rank === 3 ? '#CD7F32' : '#8E2DE2';
+  const barColor = entry.rank === 1 ? '#FFD200' : entry.rank === 2 ? '#C0C0C0' : entry.rank === 3 ? '#CD7F32' : '#FF4500';
   const barWidth = barW.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
   const avatarLetter = entry.username?.replace('@', '')?.charAt(0)?.toUpperCase() || '?';
 
@@ -425,8 +379,8 @@ const LeaderboardRow = React.memo(({ entry, isMe, delay = 0 }) => {
     <Animated.View
       style={[
         aStyles.lbRow,
-        isMe && aStyles.lbRowMe,
-        { opacity, transform: [{ translateX: slideX }] },
+        isMe && { backgroundColor: isDark ? 'rgba(255,69,0,0.15)' : 'rgba(255,69,0,0.08)', borderRadius: 14, paddingHorizontal: 10, marginHorizontal: -10 },
+        { opacity, transform: [{ translateX: slideX }], borderBottomColor: theme.separator },
       ]}
     >
       {/* Rank */}
@@ -434,35 +388,35 @@ const LeaderboardRow = React.memo(({ entry, isMe, delay = 0 }) => {
         {entry.rank <= 3 ? (
           <Text style={aStyles.lbRankEmoji}>{entry.badge}</Text>
         ) : (
-          <Text style={[aStyles.lbRank, { color: isMe ? Data.brand?.blue || '#0A84FF' : 'rgba(255,255,255,0.4)' }]}>
+          <Text style={[aStyles.lbRank, { color: isMe ? '#FFD200' : theme.subText }]}>
             {entry.rank}
           </Text>
         )}
       </View>
 
       {/* Avatar */}
-      <View style={[aStyles.lbAvatar, isMe && { borderColor: Data.brand?.blue || '#0A84FF' }]}>
+      <View style={[aStyles.lbAvatar, { backgroundColor: theme.iconBtn, borderColor: isMe ? '#FFD200' : theme.iconBorder }]}>
         {entry.avatar ? (
           <Image source={{ uri: entry.avatar }} style={{ width: '100%', height: '100%' }} />
         ) : (
-          <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 14 }}>{avatarLetter}</Text>
+          <Text style={{ color: theme.text, fontWeight: '900', fontSize: 14 }}>{avatarLetter}</Text>
         )}
       </View>
 
       {/* Name + bar */}
       <View style={{ flex: 1, marginLeft: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-          <Text style={[aStyles.lbName, isMe && { color: Data.brand?.blue || '#0A84FF' }]} numberOfLines={1}>
+          <Text style={[aStyles.lbName, { color: isMe ? '#FFD200' : theme.text }]} numberOfLines={1}>
             {entry.username}{isMe ? ' (you)' : ''}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             {entry.streak > 0 && (
               <Text style={aStyles.lbStreak}>🔥{entry.streak}</Text>
             )}
-            <Text style={aStyles.lbPoints}>{fmtNum(entry.points)}</Text>
+            <Text style={[aStyles.lbPoints, { color: theme.subText }]}>{fmtNum(entry.points)}</Text>
           </View>
         </View>
-        <View style={aStyles.lbBarBg}>
+        <View style={[aStyles.lbBarBg, { backgroundColor: theme.border }]}>
           <Animated.View style={[aStyles.lbBarFill, { width: barWidth, backgroundColor: barColor }]} />
         </View>
       </View>
@@ -471,9 +425,9 @@ const LeaderboardRow = React.memo(({ entry, isMe, delay = 0 }) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  ENERGY METER (community-wide participation)
+//  ENERGY METER
 // ═══════════════════════════════════════════════════════════════════════════════
-const EnergyMeter = React.memo(({ totalEntries }) => {
+const EnergyMeter = React.memo(({ totalEntries, theme }) => {
   const fillAnim = useRef(new Animated.Value(0)).current;
   const pct = Math.min(100, Math.round((totalEntries / 400) * 100));
 
@@ -490,15 +444,15 @@ const EnergyMeter = React.memo(({ totalEntries }) => {
                { text: 'NUCLEAR ☢️',    color: '#FF0000' };
 
   return (
-    <View style={aStyles.energyWrap}>
+    <View style={[aStyles.energyWrap, { backgroundColor: theme.cardBg, borderColor: theme.border }]}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Ionicons name="flash" size={14} color="#FFD200" />
-          <Text style={aStyles.energyLabel}>ARENA ENERGY</Text>
+          <Text style={[aStyles.energyLabel, { color: theme.text }]}>ARENA ENERGY</Text>
         </View>
         <Text style={[aStyles.energyState, { color: label.color }]}>{label.text}</Text>
       </View>
-      <View style={aStyles.energyBarBg}>
+      <View style={[aStyles.energyBarBg, { backgroundColor: theme.border }]}>
         <Animated.View
           style={[aStyles.energyBarFill, { width: widthPct }]}
         >
@@ -510,7 +464,7 @@ const EnergyMeter = React.memo(({ totalEntries }) => {
           />
         </Animated.View>
       </View>
-      <Text style={aStyles.energySub}>{totalEntries} total entries across all challenges</Text>
+      <Text style={[aStyles.energySub, { color: theme.subText }]}>{totalEntries} total entries across all challenges</Text>
     </View>
   );
 });
@@ -530,33 +484,43 @@ export default function ArenaScreen({ setSecondSheet }) {
     userStreak = 0,
   } = useAppStore();
 
-  const isDark = userSettings?.darkMode !== false;
+  // ⭐️ התיקון העיקרי לבעיית העיצוב הבהיר! ⭐️
+  const isDark = userSettings?.darkMode === true; 
+
+  const theme = {
+    bg: isDark ? '#050505' : '#F9FAFB',
+    cardBg: isDark ? 'rgba(255,255,255,0.02)' : '#FFFFFF',
+    border: isDark ? 'rgba(255,255,255,0.04)' : '#E5E7EB',
+    text: isDark ? '#FFFFFF' : '#111827',
+    subText: isDark ? 'rgba(255,255,255,0.5)' : '#6B7280',
+    iconBtn: isDark ? 'rgba(255,255,255,0.08)' : '#F3F4F6',
+    iconBorder: isDark ? 'rgba(255,255,255,0.12)' : '#E5E7EB',
+    separator: isDark ? 'rgba(255,255,255,0.05)' : '#E5E7EB',
+  };
+
   const [refreshing, setRefreshing] = useState(false);
   const [selectedChallengeIdx, setSelectedChallengeIdx] = useState(0);
   const [enteredChallenges, setEnteredChallenges] = useState(new Set());
   const [leaderboard, setLeaderboard] = useState(MOCK_LEADERBOARD);
   const [lbLoading, setLbLoading] = useState(false);
 
-  const challenges = ARENA_CHALLENGES; // Use real weeklyChallenge from store when available
-
-  // Merge real weekly challenge at top
   const allChallenges = useMemo(() => {
-    if (!weeklyChallenge) return challenges;
+    if (!weeklyChallenge) return [];
     const real = {
-      id: weeklyChallenge.id || 'wc',
+      id: weeklyChallenge.id,
       title: weeklyChallenge.title || 'Weekly Challenge',
       subtitle: weeklyChallenge.description || '',
       icon: 'trophy',
-      emoji: '🏆',
-      colors: ['#FF2D55', '#8E2DE2', '#4A00E0'],
-      accentColor: '#FF2D55',
+      emoji: weeklyChallenge.emoji || '🔥', 
+      colors: ['#FF4500', '#E91E63', '#7B1FA2'], 
+      accentColor: '#FFD700', 
       endsAt: weeklyChallenge.endsAt ? new Date(weeklyChallenge.endsAt) : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
       prize: `${weeklyChallenge._count?.entries || 0} entries — win the crown`,
       entries: weeklyChallenge._count?.entries || 0,
       active: true,
     };
-    return [real, ...challenges];
-  }, [weeklyChallenge, challenges]);
+    return [real];
+  }, [weeklyChallenge]);
 
   const selectedChallenge = allChallenges[selectedChallengeIdx] || allChallenges[0];
 
@@ -566,7 +530,6 @@ export default function ArenaScreen({ setSecondSheet }) {
     fetchWeeklyChallenge?.();
     Animated.timing(mountAnim, { toValue: 1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
 
-    // Try loading real leaderboard
     const loadLb = async () => {
       try {
         setLbLoading(true);
@@ -582,24 +545,36 @@ export default function ArenaScreen({ setSecondSheet }) {
           })));
         }
       } catch (_) {
-        // Keep mock leaderboard
       } finally {
         setLbLoading(false);
       }
     };
     loadLb();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); 
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
-  const handleSubmit = useCallback((challengeId) => {
+  const handleSubmit = useCallback(async (challengeId) => {
+    if (!challengeId) return;
     haptic('heavy');
+    try {
+      await fetchAPI(`/weekly-challenge/${challengeId}/enter`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    } catch (error) {
+      if (__DEV__) console.warn('[ArenaScreen] Failed to submit challenge entry:', error);
+      Alert.alert('Couldn\u2019t submit', 'Please check your connection and try again.');
+      return;
+    }
+
+    trackEvent('arena_challenge_joined', { challengeId, userId: user?.id });
     setEnteredChallenges((prev) => {
       const next = new Set(prev);
       next.add(challengeId);
       return next;
     });
     setPulseCreateOpen?.(true);
-  }, [setPulseCreateOpen]);
+  }, [setPulseCreateOpen, user?.id]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -613,104 +588,120 @@ export default function ArenaScreen({ setSecondSheet }) {
     [allChallenges]
   );
 
-  // User's position in leaderboard
   const myEntry = useMemo(() => {
     if (!user) return null;
     const mine = leaderboard.find((e) => e.username === `@${user.username}` || e.username === user.username);
     if (mine) return mine;
-    // If not in top list, show them at the bottom
     return { rank: leaderboard.length + 1, username: `@${user.username || 'you'}`, points: user.points || 0, avatar: user.avatarUrl || null, streak: userStreak, badge: null };
   }, [leaderboard, user, userStreak]);
 
   return (
-    <View style={aStyles.root}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+    <View style={[aStyles.root, { backgroundColor: theme.bg }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} translucent backgroundColor="transparent" />
 
-      {/* ── Animated background gradient ── */}
-      <LinearGradient
-        colors={['#0A0014', '#0D0020', '#080010']}
-        style={StyleSheet.absoluteFillObject}
-      />
+      {/* ⭐️ הרקע מכבד את הבקשה שלך להיות לבן (F9FAFB) כשאתה במצב בהיר ⭐️ */}
+      {isDark ? (
+        <LinearGradient
+          colors={['#050505', '#120d1c', '#050505']}
+          style={StyleSheet.absoluteFillObject}
+        />
+      ) : (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.bg }]} />
+      )}
 
       {/* ── Header ── */}
       <Animated.View style={[aStyles.header, { opacity: mountAnim }]}>
-        {/* ✅ Arena הוא עכשיו טאב — אין back. מציג אייקון trophy במקום */}
-        <View style={aStyles.backBtn}>
+        <View style={[aStyles.backBtn, { backgroundColor: theme.iconBtn, borderColor: theme.iconBorder }]}>
           <Ionicons name="trophy" size={20} color="#FFD200" />
         </View>
 
         <View style={{ flex: 1, alignItems: 'center' }}>
           <LinearGradient
-            colors={['#FF2D55', '#8E2DE2', '#FFD200']}
+            colors={['#FF4500', '#E91E63', '#FFD200']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
-            style={{ borderRadius: 4, paddingHorizontal: 14, paddingVertical: 4 }}
+            style={{ borderRadius: 6, paddingHorizontal: 16, paddingVertical: 6 }}
           >
             <Text style={aStyles.headerTitle}>⚔️  ARENA</Text>
           </LinearGradient>
-          <Text style={aStyles.headerSub}>{allChallenges.length} active challenges</Text>
+          <Text style={[aStyles.headerSub, { color: theme.subText }]}>{allChallenges.length} active challenges</Text>
         </View>
 
-        {/* My rank */}
         {myEntry && (
           <View style={aStyles.myRankChip}>
-            <Text style={{ color: '#FFD200', fontWeight: '900', fontSize: 10 }}>#{myEntry.rank}</Text>
+            <Text style={{ color: '#FFD200', fontWeight: '900', fontSize: 12 }}>#{myEntry.rank}</Text>
           </View>
         )}
       </Animated.View>
 
       <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: IS_IOS ? 110 : 90, paddingBottom: 60 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8E2DE2" />}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingTop: IS_IOS ? 40 : 30, paddingBottom: 100 }} // <--- שינינו מ-60 ל-20
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF4500" />}
       >
         {/* ── Energy meter ── */}
         <Animated.View style={{ opacity: mountAnim }}>
-          <EnergyMeter totalEntries={totalEntries} />
+          <EnergyMeter totalEntries={totalEntries} theme={theme} />
         </Animated.View>
 
         {/* ── Challenge selector strip ── */}
-        <Animated.View style={{ opacity: mountAnim }}>
-          <Text style={aStyles.sectionLabel}>CHOOSE YOUR BATTLE</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 18, gap: 12, paddingBottom: 6 }}
-          >
-            {allChallenges.map((ch, idx) => (
-              <MiniChallengeCard
-                key={ch.id}
-                challenge={ch}
-                isSelected={idx === selectedChallengeIdx}
-                onPress={() => { haptic('light'); setSelectedChallengeIdx(idx); }}
-              />
-            ))}
-          </ScrollView>
-        </Animated.View>
+        {allChallenges.length > 0 ? (
+          <>
+            <Animated.View style={{ opacity: mountAnim }}>
+              <Text style={[aStyles.sectionLabel, { color: theme.subText }]}>CHOOSE YOUR BATTLE</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 18, gap: 12, paddingBottom: 6 }}
+              >
+                {leaderboard.slice(3).map((entry, i) => (
+                <LeaderboardRow
+                key={entry.username || `lb-${i}`} // התיקון: מוסיפים index כגיבוי
+                entry={entry}
+                isMe={entry.username === `@${user?.username}`}
+                delay={i * 80}
+                theme={theme}
+                isDark={isDark}
+                />
+                ))}
+              </ScrollView>
+            </Animated.View>
 
-        {/* ── Hero challenge card ── */}
-        <Animated.View
-          style={{
-            opacity: mountAnim,
-            transform: [{ translateY: mountAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
-            marginTop: 20,
-          }}
-        >
-          <HeroChallengeCard
-            challenge={selectedChallenge}
-            onSubmit={() => handleSubmit(selectedChallenge.id)}
-            userEntered={enteredChallenges.has(selectedChallenge.id)}
-          />
-        </Animated.View>
+            {/* ── Hero challenge card ── */}
+            <Animated.View
+              style={{
+                opacity: mountAnim,
+                transform: [{ translateY: mountAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
+                marginTop: 20,
+              }}
+            >
+              <HeroChallengeCard
+                challenge={selectedChallenge}
+                onSubmit={() => handleSubmit(selectedChallenge.id)}
+                userEntered={enteredChallenges.has(selectedChallenge.id)}
+              />
+            </Animated.View>
+          </>
+        ) : (
+          <Animated.View style={{ opacity: mountAnim, marginHorizontal: 18, marginTop: 30, alignItems: 'center' }}>
+            <Ionicons name="hourglass-outline" size={36} color={theme.subText} />
+            <Text style={{ color: theme.text, fontWeight: '700', marginTop: 12, fontSize: 15 }}>
+              No active challenge right now
+            </Text>
+            <Text style={{ color: theme.subText, marginTop: 4, fontSize: 13 }}>
+              Check back soon — a new one is on the way.
+            </Text>
+          </Animated.View>
+        )}
 
         {/* ── Leaderboard ── */}
-        <View style={aStyles.lbSection}>
+        <View style={[aStyles.lbSection, { backgroundColor: theme.cardBg, borderTopColor: theme.border }]}>
           <View style={aStyles.lbHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Ionicons name="trophy" size={16} color="#FFD200" />
-              <Text style={aStyles.sectionLabel}>LEADERBOARD</Text>
+              <Text style={[aStyles.sectionLabel, { color: theme.subText, marginTop: 0, marginBottom: 0, paddingHorizontal: 0 }]}>LEADERBOARD</Text>
             </View>
-            <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '700' }}>ALL TIME</Text>
+            <Text style={{ color: theme.subText, fontSize: 10, fontWeight: '700' }}>ALL TIME</Text>
           </View>
 
           {/* Top 3 podium */}
@@ -718,14 +709,14 @@ export default function ArenaScreen({ setSecondSheet }) {
             {/* 2nd */}
             {leaderboard[1] && (
               <View style={[aStyles.podiumItem, { marginTop: 22 }]}>
-                <View style={[aStyles.podiumAvatar, { borderColor: '#C0C0C0', width: 54, height: 54, borderRadius: 27 }]}>
-                  <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18 }}>
+                <View style={[aStyles.podiumAvatar, { borderColor: '#C0C0C0', width: 54, height: 54, borderRadius: 27, backgroundColor: theme.iconBtn }]}>
+                  <Text style={{ color: theme.text, fontWeight: '900', fontSize: 18 }}>
                     {leaderboard[1].username?.replace('@', '')?.charAt(0)?.toUpperCase()}
                   </Text>
                 </View>
                 <Text style={aStyles.podiumEmoji}>🥈</Text>
-                <Text style={aStyles.podiumName} numberOfLines={1}>{leaderboard[1].username}</Text>
-                <Text style={aStyles.podiumPts}>{fmtNum(leaderboard[1].points)}</Text>
+                <Text style={[aStyles.podiumName, { color: theme.text }]} numberOfLines={1}>{leaderboard[1].username}</Text>
+                <Text style={[aStyles.podiumPts, { color: theme.subText }]}>{fmtNum(leaderboard[1].points)}</Text>
                 <LinearGradient colors={['#888', '#555']} style={[aStyles.podiumPillar, { height: 50 }]} />
               </View>
             )}
@@ -735,12 +726,12 @@ export default function ArenaScreen({ setSecondSheet }) {
                 <View style={[aStyles.podiumCrown]}>
                   <Text style={{ fontSize: 22 }}>👑</Text>
                 </View>
-                <View style={[aStyles.podiumAvatar, { borderColor: '#FFD200', width: 68, height: 68, borderRadius: 34, shadowColor: '#FFD200', shadowOpacity: 0.7, shadowRadius: 12, elevation: 10 }]}>
-                  <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 24 }}>
+                <View style={[aStyles.podiumAvatar, { borderColor: '#FFD200', width: 68, height: 68, borderRadius: 34, backgroundColor: theme.iconBtn, shadowColor: '#FFD200', shadowOpacity: 0.7, shadowRadius: 12, elevation: 10 }]}>
+                  <Text style={{ color: theme.text, fontWeight: '900', fontSize: 24 }}>
                     {leaderboard[0].username?.replace('@', '')?.charAt(0)?.toUpperCase()}
                   </Text>
                 </View>
-                <Text style={aStyles.podiumName} numberOfLines={1}>{leaderboard[0].username}</Text>
+                <Text style={[aStyles.podiumName, { color: theme.text }]} numberOfLines={1}>{leaderboard[0].username}</Text>
                 <Text style={[aStyles.podiumPts, { color: '#FFD200', fontSize: 14 }]}>{fmtNum(leaderboard[0].points)}</Text>
                 <LinearGradient colors={['#FFD200', '#FF8A00']} style={[aStyles.podiumPillar, { height: 70 }]} />
               </View>
@@ -748,14 +739,14 @@ export default function ArenaScreen({ setSecondSheet }) {
             {/* 3rd */}
             {leaderboard[2] && (
               <View style={[aStyles.podiumItem, { marginTop: 36 }]}>
-                <View style={[aStyles.podiumAvatar, { borderColor: '#CD7F32', width: 48, height: 48, borderRadius: 24 }]}>
-                  <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 16 }}>
+                <View style={[aStyles.podiumAvatar, { borderColor: '#CD7F32', width: 48, height: 48, borderRadius: 24, backgroundColor: theme.iconBtn }]}>
+                  <Text style={{ color: theme.text, fontWeight: '900', fontSize: 16 }}>
                     {leaderboard[2].username?.replace('@', '')?.charAt(0)?.toUpperCase()}
                   </Text>
                 </View>
                 <Text style={aStyles.podiumEmoji}>🥉</Text>
-                <Text style={aStyles.podiumName} numberOfLines={1}>{leaderboard[2].username}</Text>
-                <Text style={aStyles.podiumPts}>{fmtNum(leaderboard[2].points)}</Text>
+                <Text style={[aStyles.podiumName, { color: theme.text }]} numberOfLines={1}>{leaderboard[2].username}</Text>
+                <Text style={[aStyles.podiumPts, { color: theme.subText }]}>{fmtNum(leaderboard[2].points)}</Text>
                 <LinearGradient colors={['#CD7F32', '#8B4513']} style={[aStyles.podiumPillar, { height: 36 }]} />
               </View>
             )}
@@ -769,13 +760,15 @@ export default function ArenaScreen({ setSecondSheet }) {
                 entry={entry}
                 isMe={entry.username === `@${user?.username}`}
                 delay={i * 80}
+                theme={theme}
+                isDark={isDark}
               />
             ))}
             {/* My row if not in top */}
             {myEntry && myEntry.rank > leaderboard.length && (
               <>
-                <View style={aStyles.lbDivider} />
-                <LeaderboardRow entry={myEntry} isMe delay={0} />
+                <View style={[aStyles.lbDivider, { backgroundColor: theme.separator }]} />
+                <LeaderboardRow entry={myEntry} isMe delay={0} theme={theme} isDark={isDark} />
               </>
             )}
           </View>
@@ -789,7 +782,7 @@ export default function ArenaScreen({ setSecondSheet }) {
             style={{ borderRadius: 24, overflow: 'hidden' }}
           >
             <LinearGradient
-              colors={['#FF2D55', '#8E2DE2', '#4A00E0']}
+              colors={['#FF4500', '#E91E63', '#7B1FA2']} 
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, gap: 12 }}
@@ -801,7 +794,7 @@ export default function ArenaScreen({ setSecondSheet }) {
               <Ionicons name="arrow-forward" size={18} color="rgba(255,255,255,0.7)" />
             </LinearGradient>
           </TouchableOpacity>
-          <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, textAlign: 'center', marginTop: 10, fontWeight: '500' }}>
+          <Text style={{ color: theme.subText, fontSize: 11, textAlign: 'center', marginTop: 10, fontWeight: '500' }}>
             Every pulse earns points · Every point climbs the board
           </Text>
         </View>
@@ -814,7 +807,7 @@ export default function ArenaScreen({ setSecondSheet }) {
 //  STYLES
 // ═══════════════════════════════════════════════════════════════════════════════
 const aStyles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#08001C' },
+  root: { flex: 1 }, // הצבע נקבע דינמית עכשיו
 
   header: {
     position: 'relative',
@@ -826,69 +819,70 @@ const aStyles = StyleSheet.create({
   },
   backBtn: {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { color: '#FFF', fontWeight: '900', fontSize: 15, letterSpacing: 2.5 },
-  headerSub:   { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '600', letterSpacing: 1, marginTop: 3 },
+  headerTitle: { color: '#FFF', fontWeight: '900', fontSize: 17, letterSpacing: 2.5 },
+  headerSub:   { fontSize: 11, fontWeight: '600', letterSpacing: 1, marginTop: 3 },
   myRankChip: {
     backgroundColor: 'rgba(255,210,0,0.15)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7,
     borderWidth: 1, borderColor: 'rgba(255,210,0,0.4)',
   },
 
   sectionLabel: {
-    color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '900',
+    fontSize: 12, fontWeight: '900',
     letterSpacing: 2, paddingHorizontal: 18, marginBottom: 14, marginTop: 8,
   },
 
   // Energy
   energyWrap: {
     marginHorizontal: 18, marginBottom: 24, padding: 16,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 20, borderWidth: 1,
   },
-  energyLabel: { color: 'rgba(255,255,255,0.6)', fontWeight: '900', fontSize: 11, letterSpacing: 1.5 },
+  energyLabel: { fontWeight: '900', fontSize: 11, letterSpacing: 1.5 },
   energyState: { fontWeight: '900', fontSize: 12 },
-  energyBarBg: { height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginBottom: 8 },
+  energyBarBg: { height: 10, borderRadius: 5, overflow: 'hidden', marginBottom: 8 },
   energyBarFill: { height: '100%', borderRadius: 5 },
-  energySub: { color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '600' },
+  energySub: { fontSize: 10, fontWeight: '600' },
 
-  // Hero card
+  // Hero card (התוכן הפנימי שלו תמיד נשאר לבן כי הוא יושב על גרדיאנט צבעוני)
   heroCard: {
-    borderRadius: 28, padding: 22,
-    shadowOffset: { width: 0, height: 14 }, shadowRadius: 24, elevation: 14,
+    borderRadius: 24, padding: 22,
+    shadowOffset: { width: 0, height: 16 }, shadowRadius: 30, elevation: 20,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
   },
   activePill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)'
   },
   activeDot: { width: 6, height: 6, borderRadius: 3 },
   activePillText: { color: '#FFF', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
   entriesChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
   },
-  entriesText: { color: 'rgba(255,255,255,0.8)', fontSize: 10, fontWeight: '800' },
-  heroEmoji: { fontSize: 52, marginBottom: 14, alignSelf: 'flex-start' },
-  heroTitle: { color: '#FFF', fontWeight: '900', fontSize: 22, letterSpacing: -0.3, marginBottom: 6 },
-  heroSub:   { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '500', lineHeight: 19, marginBottom: 14 },
+  entriesText: { color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '800' },
+  heroEmoji: { fontSize: 56, marginBottom: 14, alignSelf: 'flex-start' },
+  heroTitle: { color: '#FFF', fontWeight: '900', fontSize: 26, letterSpacing: -0.5, marginBottom: 6 },
+  heroSub:   { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '500', lineHeight: 20, marginBottom: 14 },
   prizeRow: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
-    backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 8, marginBottom: 20, alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 20, alignSelf: 'flex-start',
+    borderWidth: 1, borderColor: 'rgba(255,210,0,0.3)'
   },
-  prizeText: { color: '#FFD200', fontWeight: '800', fontSize: 12 },
+  prizeText: { color: '#FFD200', fontWeight: '800', fontSize: 13 },
   countdownRow: {
-    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'flex-start',
-    gap: 2, marginBottom: 22,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', 
+    width: '100%', marginBottom: 22,
   },
   heroCTA: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 20, paddingVertical: 16,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 16, paddingVertical: 18,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)',
   },
-  heroCTAText: { color: '#FFF', fontWeight: '900', fontSize: 15, letterSpacing: 1 },
+  heroCTAText: { color: '#FFF', fontWeight: '900', fontSize: 16, letterSpacing: 1 },
 
   // Mini cards
   miniCard: {
@@ -912,9 +906,7 @@ const aStyles = StyleSheet.create({
   // Leaderboard
   lbSection: {
     marginTop: 8, paddingBottom: 8,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)',
-    paddingTop: 20,
+    borderTopWidth: 1, paddingTop: 20,
   },
   lbHeaderRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -929,33 +921,31 @@ const aStyles = StyleSheet.create({
   podiumItem: { alignItems: 'center', flex: 1 },
   podiumCrown: { marginBottom: 4 },
   podiumAvatar: {
-    backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 2.5,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 6, overflow: 'hidden',
+    borderWidth: 2.5, alignItems: 'center', justifyContent: 'center', 
+    marginBottom: 6, overflow: 'hidden',
   },
   podiumEmoji: { fontSize: 18, marginBottom: 2 },
-  podiumName:  { color: 'rgba(255,255,255,0.85)', fontWeight: '800', fontSize: 10, letterSpacing: 0.3, maxWidth: 80, textAlign: 'center' },
-  podiumPts:   { color: 'rgba(255,255,255,0.55)', fontWeight: '800', fontSize: 11, marginBottom: 6 },
+  podiumName:  { fontWeight: '800', fontSize: 10, letterSpacing: 0.3, maxWidth: 80, textAlign: 'center' },
+  podiumPts:   { fontWeight: '800', fontSize: 11, marginBottom: 6 },
   podiumPillar:{ width: '100%', borderTopLeftRadius: 6, borderTopRightRadius: 6 },
 
   lbList: { paddingHorizontal: 18 },
   lbRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)',
+    borderBottomWidth: 1,
   },
-  lbRowMe: { backgroundColor: 'rgba(10,132,255,0.08)', borderRadius: 14, paddingHorizontal: 10, marginHorizontal: -10 },
   lbRankWrap: { width: 32, alignItems: 'center' },
   lbRankEmoji:{ fontSize: 18 },
   lbRank:     { fontWeight: '900', fontSize: 14 },
   lbAvatar: {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1.5,
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  lbName:   { color: '#FFF', fontWeight: '800', fontSize: 13, flex: 1 },
-  lbStreak: { color: '#FF8A00', fontSize: 11, fontWeight: '800' },
-  lbPoints: { color: 'rgba(255,255,255,0.6)', fontWeight: '800', fontSize: 12 },
-  lbBarBg:  { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
+  lbName:   { fontWeight: '800', fontSize: 13, flex: 1 },
+  lbStreak: { color: '#FFD700', fontSize: 11, fontWeight: '800' },
+  lbPoints: { fontWeight: '800', fontSize: 12 },
+  lbBarBg:  { height: 4, borderRadius: 2, overflow: 'hidden' },
   lbBarFill:{ height: '100%', borderRadius: 2 },
-  lbDivider:{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginVertical: 8 },
+  lbDivider:{ height: 1, marginVertical: 8 },
 });

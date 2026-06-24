@@ -28,6 +28,7 @@ import { Video } from 'expo-av';
 import { useAudioFX } from './useAudioFX';
 import { useCoSinger } from './useCoSinger';
 import * as api from '../../store/api';   // 👈 your existing API wrapper (auth + FormData)
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -315,6 +316,7 @@ export const DanceChallenge = ({ sheet, onClose, isDark, supabase, currentUser }
       if (isPulse) form.append('vibe', 'Happy');
 
       await api.fetchAPI(endpoint, { method: 'POST', body: form });
+      trackEvent('dance_challenge_published', { target: publishTo, syncScore: syncPeak }); // 👈 מודד אחוזי הצלחה ויעד פרסום
 
       Alert.alert(
         'Posted! 🎉',

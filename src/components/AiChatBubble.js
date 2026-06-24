@@ -1,12 +1,28 @@
 // client/src/components/AiChatBubble.js
 // ⭐️ FULL DARK MODE COMPATIBLE ⭐️
+// v1.1
+//
+// [V1.1 CHANGES — Engineering Audit Fixes]:
+//   [FIX LOW]    Added `if (!message) return null;` guard. Every comparable list-item
+//                component in this codebase (CommentItem, GroupUpdateBubble, PulseItem,
+//                MemberTile, QuestItem, etc.) guards against a missing core prop — this
+//                was the one exception, and a single malformed/null item in a chat
+//                history array would throw and could crash the whole screen.
+//   [FIX MEDIUM] Wrapped the export in memo(). This renders inside a scrolling chat
+//                history list (BotStudioScreen) — every other list-item component in
+//                this codebase is memoized; this one wasn't. Without it, every keystroke
+//                while composing a new message re-renders the ENTIRE chat history, not
+//                just the new bubble.
 
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 // ⭐️ מקבלים את isDark מהפרופס (BotStudioScreen כבר מעביר אותו אלינו) ⭐️
-export default function AiChatBubble({ message, isDark }) {
+const AiChatBubble = ({ message, isDark }) => {
+  // [FIX LOW] Guard against missing/malformed data — consistent with the rest of the codebase.
+  if (!message) return null;
+
   const isUser = message.sender === 'user';
 
   return (
@@ -29,7 +45,11 @@ export default function AiChatBubble({ message, isDark }) {
       </View>
     </View>
   );
-}
+};
+
+AiChatBubble.displayName = 'AiChatBubble';
+
+export default memo(AiChatBubble);
 
 const styles = StyleSheet.create({
   container: { flexDirection: 'row', marginVertical: 6, width: '100%' },

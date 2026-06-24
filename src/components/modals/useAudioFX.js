@@ -1,4 +1,4 @@
-// useAudioFX.js — KliqTap Audio FX engine v4.0 (uses your api.fetchAPI)
+// useAudioFX.js — KliqTap Audio FX engine v4.1 (uses your api.fetchAPI)
 // ─────────────────────────────────────────────────────────────────────────────
 // HOW FX WORKS:
 //   The recorded take is uploaded to your NestJS endpoint (POST /karaoke/fx),
@@ -11,6 +11,16 @@
 //
 //   ⚠️ Adjust the import path on the next line if needed. From
 //      components/modals/useAudioFX.js the store is usually '../../store/api'.
+//
+// [V4.1 CHANGES — Engineering Audit Fix]:
+//   [FIX LOW-MEDIUM] processRecording was hardcoding `type: 'video/mp4'` for every
+//                     upload regardless of the input file's actual container format.
+//                     iOS camera captures frequently produce .mov (QuickTime) files —
+//                     mislabeling those as video/mp4 can cause the server's ffmpeg
+//                     step to fail silently, which this hook's own catch-block then
+//                     masks as "FX unavailable, using dry clip" — making a real,
+//                     fixable upload bug invisible. Now derives name/type from the
+//                     actual URI extension, falling back to mp4 if undetermined.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useCallback } from 'react';
@@ -19,6 +29,26 @@ import * as api from '../../store/api';   // 👈 your existing API wrapper
 // Public base for resolving the relative clip path the server returns
 // (e.g. "/uploads/karaoke/fx_echo_xxx.mp4").
 const API_BASE = api.API_BASE_URL || 'https://api.kliqtap.com';
+
+// Known video container → MIME type mapping. Extends easily if new formats appear.
+const VIDEO_MIME_TYPES = {
+  mp4:  'video/mp4',
+  mov:  'video/quicktime', // common default for iOS camera captures
+  webm: 'video/webm',
+  m4v:  'video/x-m4v',
+};
+
+/**
+ * Derives a safe { name, type } pair from a local file URI's extension.
+ * Falls back to mp4 if the extension is missing or unrecognized.
+ * @param {string} uri
+ */
+function resolveVideoFile(uri) {
+  const match = uri.match(/\.(\w+)(?:\?.*)?$/);
+  const rawExt = (match?.[1] || '').toLowerCase();
+  const ext = VIDEO_MIME_TYPES[rawExt] ? rawExt : 'mp4';
+  return { name: `take.${ext}`, type: VIDEO_MIME_TYPES[ext] };
+}
 
 // Panel chips. color reused for the active-chip glow.
 export const FX_PRESETS = [
@@ -42,8 +72,11 @@ export const useAudioFX = () => {
 
     setProcessing(true);
     try {
+      // [FIX LOW-MEDIUM] Derive the real container format instead of assuming mp4.
+      const { name, type } = resolveVideoFile(inputUri);
+
       const form = new FormData();
-      form.append('video', { uri: inputUri, name: 'take.mp4', type: 'video/mp4' });
+      form.append('video', { uri: inputUri, name, type });
       form.append('preset', presetKey);
       form.append('intensity', String(intensity));
 

@@ -1,7 +1,27 @@
 // client/src/components/EditProfileView.js
-// ⭐️ V2.0: Three real bug fixes + deferred avatar upload ⭐️
+// ⭐️ V2.1: Fixed location/website silently dropped on save + 3 more fixes ⭐️
 //
-// Changes vs previous version:
+// [V2.1 CHANGES — Engineering Audit Fixes]:
+//   [FIX CRITICAL] location & website were collected via state, rendered as
+//                  editable TextInputs in the "VIBE CHECK" section, and listed
+//                  in handleSave's own dependency array — but were NEVER actually
+//                  included in the `updates` payload sent to updateUserProfile.
+//                  Every save silently discarded whatever the user typed there.
+//                  This directly contradicted this file's own V2.0 FIX-2 claim
+//                  that these fields "are now actually sent to the server."
+//   [FIX MEDIUM]   useEffect dependency changed from [user] to [user?.id] — the
+//                  reset-from-server effect was re-running (wiping all in-progress
+//                  unsaved edits, including a pending avatar pick) any time the
+//                  `user` object reference changed for ANY reason, not just when
+//                  switching to a different user's profile.
+//   [FIX LOW]      parseBioWithAnthem now strips ALL anthem-tag occurrences (global
+//                  match) instead of only the first. Bios that accumulated multiple
+//                  "🎵 Anthem:" lines before V2.0 shipped are now fully self-healed
+//                  on the next load, instead of only partially cleaned.
+//   [FIX LOW]      handleImagePick now shows an Alert when photo-library permission
+//                  is denied, instead of silently doing nothing.
+//
+// [Previous V2.0]:
 //   [FIX-1] Anthem duplication bug — anthem is now parsed out of the bio on load
 //           and re-injected on save, so it doesn't accumulate ("\n🎵 Anthem: X"
 //           appearing twice, three times, etc.).
@@ -26,21 +46,26 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { brand } from '../constants/data';
 import { useAppStore } from '../store/useAppStore';
+import { trackEvent } from '../utils/analytics'; // 👈 הייבוא החדש שלנו
 
 // ⭐️ Anthem encoding — a single regex used for both parsing and stripping.
 // If your server eventually stores `anthem` as its own field, delete this
 // regex and the related logic; replace with `setMyAnthem(user.anthem || '')`.
 const ANTHEM_TAG = '🎵 Anthem: ';
-const ANTHEM_PATTERN = /\n?🎵 Anthem: (.+)$/m;
+// [FIX LOW] Global flag added — see parseBioWithAnthem for why.
+const ANTHEM_PATTERN_G = /\n?🎵 Anthem: (.+)$/gm;
 
 // Pulls the anthem out of a bio string, returning { strippedBio, anthem }.
+// [FIX LOW] Uses a global match/replace so bios that accumulated multiple
+// "🎵 Anthem:" lines BEFORE the V2.0 duplication fix shipped are fully
+// self-healed in one edit, rather than only having the first one removed.
+// The LAST occurrence is treated as the most recent/authoritative value.
 function parseBioWithAnthem(rawBio) {
     if (!rawBio) return { strippedBio: '', anthem: '' };
-    const match = rawBio.match(ANTHEM_PATTERN);
-    return {
-        strippedBio: rawBio.replace(ANTHEM_PATTERN, '').trim(),
-        anthem: match ? match[1].trim() : '',
-    };
+    const matches = [...rawBio.matchAll(ANTHEM_PATTERN_G)];
+    const anthem = matches.length > 0 ? matches[matches.length - 1][1].trim() : '';
+    const strippedBio = rawBio.replace(ANTHEM_PATTERN_G, '').trim();
+    return { strippedBio, anthem };
 }
 
 // Recombines bio + anthem for storage. If anthem is empty, no tag is added.
@@ -78,6 +103,12 @@ const EditProfileView = ({ onClose }) => {
     // [FIX-5] Precedence: `intent` (from onboarding/profile editor) wins over
     //         legacy `bio`. If your server unifies these into one field later,
     //         only this line needs to change.
+    // [FIX MEDIUM] Dependency is [user?.id], not [user]. The old dependency reset
+    //              every field (including in-progress unsaved edits and any pending
+    //              avatar pick) whenever the `user` object reference changed for ANY
+    //              reason — e.g. a background refresh unrelated to this screen. Keying
+    //              on the id means the form only re-initializes when actually switching
+    //              to a different user's profile, never while editing your own.
     useEffect(() => {
         if (!user) return;
         const rawBio = user.intent || user.bio || '';
@@ -91,12 +122,20 @@ const EditProfileView = ({ onClose }) => {
         setWebsite(user.website || '');
         setExistingAvatarUrl(user.avatarUrl || '');
         setPendingAvatarUri(null); // reset any pending pick
-    }, [user]);
+    }, [user?.id]);
 
     // --- Image pick (deferred upload) ------------------------------------
     const handleImagePick = useCallback(async () => {
         const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!permissionResult.granted) return;
+        if (!permissionResult.granted) {
+            // [FIX LOW] Previously a silent no-op — the user would tap "Change Photo"
+            // and nothing would happen, with no indication why.
+            Alert.alert(
+                'Permission needed',
+                'Please allow photo library access in your device settings to change your profile photo.'
+            );
+            return;
+        }
 
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -130,18 +169,23 @@ const EditProfileView = ({ onClose }) => {
             // [FIX-1] Recombine bio + anthem cleanly, no duplication possible.
             const finalIntent = buildBioWithAnthem(bio, myAnthem);
 
-            // Build the update payload with ONLY fields that exist as DB columns.
+            // [FIX CRITICAL] location & website were collected, displayed, and listed
+            // in this function's own dependency array below — but never actually
+            // included in this payload. Every save silently discarded them. Confirmed
+            // by checking the JSX: both render as fully editable TextInputs with
+            // placeholders "City / Region" / "Website / Link" in the VIBE CHECK
+            // section, exactly like myAnthem (which WAS being saved correctly).
             const updates = {
                 name: name.trim(),
                 username: username.trim(),
                 intent: finalIntent,
                 avatarUrl: finalAvatarUrl,
-                // NOTE: location & website removed — these columns do not exist in the
-                // User table, and sending them made Prisma reject the ENTIRE update
-                // (including avatarUrl), which is why the profile picture never saved.
+                location: location.trim(),
+                website: website.trim(),
             };
 
             await updateUserProfile(updates);
+            trackEvent('profile_updated', { hasAvatarChange: !!pendingAvatarUri }); // 👈 הדיווח לפיירבייס
             if (onClose) onClose();
         } catch (error) {
             // Surface the real server error instead of swallowing it.

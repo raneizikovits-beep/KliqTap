@@ -1,19 +1,36 @@
 // client/src/components/Header.js
 // ⭐️ PRODUCTION GRADE: Ultra-Clean JSX + Smaller Elegant Icons ⭐️
+// ⭐️ SECURITY: Exact 10-second timer for Admin access, browser-safe ⭐️
 
-import React, { memo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native';
+import React, { memo, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'; 
 import { useNavigation } from '@react-navigation/native';
 import { brand } from '../constants/data';
 import { useAppStore } from '../store/useAppStore'; 
 
-const { width } = Dimensions.get('window');
-
 const Header = ({ openSettings, openSearch, openSupport, openRadar, openLeaderboard }) => {
   const settings = useAppStore(state => state.userSettings || {});
   const isDark = settings.darkMode === true;
   const navigation = useNavigation();
+  const { width } = useWindowDimensions();
+
+  // ----- מנגנון טיימר מדויק ל-10 שניות -----
+  const timerRef = useRef(null);
+
+  const handlePressIn = () => {
+    timerRef.current = setTimeout(() => {
+      navigation.navigate('AdminNotice');
+    }, 10000); // 10,000 מילישניות = 10 שניות בדיוק
+  };
+
+  const handlePressOut = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+  // ------------------------------------------
 
   const headerBg = isDark ? '#000' : '#fff';
   const borderColor = isDark ? '#222' : '#f5f5f5';
@@ -24,11 +41,12 @@ const Header = ({ openSettings, openSearch, openSupport, openRadar, openLeaderbo
   return (
     <View style={[localStyles.headerContainer, { backgroundColor: headerBg, borderBottomColor: borderColor }]}>
       <View style={localStyles.contentRow}>
+        
         <TouchableOpacity 
           style={localStyles.logoSection}
           activeOpacity={1} 
-          delayLongPress={600} 
-          onLongPress={() => navigation.navigate('AdminNotice')} 
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
         >
           <View style={localStyles.logoIconBg}>
             <Ionicons name="scan-outline" size={18} color="#fff" />
@@ -40,24 +58,54 @@ const Header = ({ openSettings, openSearch, openSupport, openRadar, openLeaderbo
         </TouchableOpacity>
 
         <View style={localStyles.actionsRow}>
-          <TouchableOpacity onPress={openRadar} style={localStyles.radarBtn} activeOpacity={0.8}>
+          <TouchableOpacity
+            onPress={openRadar}
+            style={localStyles.radarBtn}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Open Radar"
+          >
             <MaterialCommunityIcons name="radar" size={18} color="#fff" />
             {width > 395 && <Text style={localStyles.radarText}>Live</Text>}
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={openLeaderboard} style={[localStyles.iconBtn, { backgroundColor: iconBtnBg }]} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={openLeaderboard}
+            style={[localStyles.iconBtn, { backgroundColor: iconBtnBg }]}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open Leaderboard"
+          >
             <MaterialCommunityIcons name="crown" size={20} color="#FFD700" />
           </TouchableOpacity>
           
-          <TouchableOpacity onPress={openSupport} style={[localStyles.iconBtn, { backgroundColor: iconBtnBg }]} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={openSupport}
+            style={[localStyles.iconBtn, { backgroundColor: iconBtnBg }]}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open Support"
+          >
             <Ionicons name="heart-circle-outline" size={21} color={iconColor} />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={openSearch} style={[localStyles.iconBtn, { backgroundColor: iconBtnBg }]} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={openSearch}
+            style={[localStyles.iconBtn, { backgroundColor: iconBtnBg }]}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open Search"
+          >
             <Ionicons name="search-outline" size={19} color={iconColor} />
           </TouchableOpacity>
           
-          <TouchableOpacity onPress={openSettings} style={[localStyles.iconBtn, { backgroundColor: iconBtnBg }]} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={openSettings}
+            style={[localStyles.iconBtn, { backgroundColor: iconBtnBg }]}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Open Settings"
+          >
             <Ionicons name="settings-outline" size={19} color={iconColor} />
           </TouchableOpacity>
         </View>

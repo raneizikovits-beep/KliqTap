@@ -1,10 +1,46 @@
 // client/src/components/modals/PostCommentsModal.js
 // ═══════════════════════════════════════════════════════════════════════════════
-//  🏆 KLIQTAP — COMMENTS MODAL v6.0 (PERSIST + EDIT + DELETE + MODERN UI)
+//  🏆 KLIQTAP — COMMENTS MODAL v6.1 (PERSIST + EDIT + DELETE + MODERN UI)
 //  • Optimistic UI: changes appear instantly, sync to server in background
 //  • Full edit/delete: swipe-to-reveal actions on each comment
 //  • Persistent: comments survive refresh because they live on the server
 //  • Beautiful: glassmorphism bubbles, animated reactions, smooth keyboards
+//
+//  [V6.1 — Engineering Audit Fixes]:
+//  [FIX HIGH] handleSubmit's CREATE branch had a "replace temp comment with
+//             real one from store" block that read `currentPost` from a stale
+//             closure — `currentPost?.comments` inside that block was captured
+//             when handleSubmit was created, BEFORE the new comment existed,
+//             not a fresh read after fetchActivePulses() resolved. The result:
+//             right after posting (on any post that already had other
+//             comments), the user's own just-submitted comment would visibly
+//             disappear for a moment before the existing sync useEffect
+//             (which correctly reacts to fresh currentPost.comments) caught up
+//             and restored it — a real, visible flicker on every comment post.
+//             Removed the redundant, buggy block entirely; the EDIT branch
+//             right below it never had this problem because it already just
+//             trusts the optimistic update + the sync effect, exactly as it
+//             should. CREATE now does the same.
+//  [FIX MEDIUM] `isDark = userSettings?.darkMode !== false` — inverted vs. the
+//             `=== true` convention used consistently everywhere else in this
+//             codebase. This meant the modal defaulted to DARK mode whenever
+//             userSettings/darkMode was undefined (e.g. brand-new users,
+//             settings not yet loaded) — while every other screen in the app
+//             would correctly default to light mode in that same scenario.
+//  [FIX LOW]  Removed `const { width: W } = Dimensions.get('window');` —
+//             confirmed unused anywhere in this file (unlike sibling files
+//             where this exact pattern was used in styles/positioning).
+//
+//  [Architectural note, not auto-fixed]: This is now the THIRD independent
+//  comments-modal implementation found across this codebase audit
+//  (CommentsSheet.js, CommentsView in SheetViews.js, and this file). This one
+//  is the most sophisticated (swipe gestures, haptics, optimistic create/edit/
+//  delete). Worth consolidating onto one canonical implementation eventually.
+//  [Verification note, not auto-fixed]: createComment/editComment are called
+//  here with a 4th "store id" argument, and deleteComment with a 3rd, that
+//  other audited files calling the same actions don't pass. Couldn't verify
+//  against socialSlice.js (not available in any session) whether these extra
+//  arguments are actually used as intended.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import React, {
@@ -13,13 +49,13 @@ import React, {
 import {
   Modal, View, Text, ScrollView, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, Image, Alert,
-  ActivityIndicator, Animated, Dimensions, PanResponder,
+  ActivityIndicator, Animated, PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { brand } from '../../constants/data';
 import { useAppStore } from '../../store/useAppStore';
+import { trackEvent } from '../../utils/analytics'; // 👈 הייבוא החדש שלנו
 
-const { width: W } = Dimensions.get('window');
 const IS_IOS = Platform.OS === 'ios';
 
 // ─── Haptics (optional) ───────────────────────────────────────────────────────
@@ -35,6 +71,22 @@ try {
     selectionAsync: () => Promise.resolve(),
   };
 }
+// ─── Trust & Safety helper ─────────────────────────────────────────────────
+async function _submitSecurityReport(reportedId, reason) {
+  if (!reportedId) return false;
+  try {
+    const token = (await import('../../store/useAppStore')).useAppStore.getState?.()?.token;
+    if (!token) return false;
+    const resp = await fetch('https://api.kliqtap.com/security/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ reportedId: String(reportedId), reason }),
+    });
+    return resp.ok;
+  } catch { return false; }
+}
+// ───────────────────────────────────────────────────────────────────────────
+
 const haptic = (k = 'light') => {
   try {
     if (k === 'light')   return Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -67,7 +119,7 @@ const formatTimeAgo = (ts) => {
 const SWIPE_THRESHOLD = 60;
 const ACTION_WIDTH    = 130; // total width of the revealed action area
 
-const CommentRow = React.memo(({ comment, currentUserId, isDark, onEdit, onDelete, onUserPress }) => {
+const CommentRow = React.memo(({ comment, currentUserId, isDark, onEdit, onDelete, onUserPress, onReport }) => {
   const translateX = useRef(new Animated.Value(0)).current;
   const isOwner    = String(comment.userId) === String(currentUserId);
   const [isOpen, setIsOpen] = useState(false);
@@ -129,7 +181,17 @@ const CommentRow = React.memo(({ comment, currentUserId, isDark, onEdit, onDelet
       >
         <TouchableOpacity
           activeOpacity={0.85}
-          onLongPress={() => isOwner && (haptic('medium'), setIsOpen(!isOpen), Animated.spring(translateX, { toValue: isOpen ? 0 : -ACTION_WIDTH, useNativeDriver: true, speed: 20, bounciness: 6 }).start())}
+          onLongPress={() => {
+            if (isOwner) {
+              haptic('medium');
+              setIsOpen(!isOpen);
+              Animated.spring(translateX, { toValue: isOpen ? 0 : -ACTION_WIDTH, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
+            } else if (onReport) {
+              // Non-owner long-press → report this comment's author
+              haptic('light');
+              onReport(comment);
+            }
+          }}
           style={styles.commentRow}
         >
           {/* Avatar */}
@@ -212,7 +274,10 @@ export function PostCommentsModal({ postId, apiPostId, visible, onClose }) {
     refreshAllData:     state.refreshAllData,
   }));
 
-  const isDark = userSettings?.darkMode !== false;
+  // [FIX MEDIUM] Was `!== false` — inverted vs. the `=== true` convention used
+  // everywhere else, causing this modal alone to default to dark mode whenever
+  // userSettings/darkMode was undefined.
+  const isDark = userSettings?.darkMode === true;
 
   const [inputText,        setInputText]        = useState('');
   const [isSubmitting,     setIsSubmitting]      = useState(false);
@@ -311,11 +376,15 @@ export function PostCommentsModal({ postId, apiPostId, visible, onClose }) {
           if (result !== false) {
             await fetchActivePulses?.();
             haptic('success');
-            // Replace temp comment with real one from store
-            setLiveComments((prev) => {
-              const fresh = currentPost?.comments || [];
-              return fresh.length > 0 ? fresh : prev.filter((c) => c.id !== tempId);
-            });
+            // [FIX HIGH] Removed a manual "replace temp comment with real one"
+            // block that read `currentPost` from a stale closure (captured when
+            // handleSubmit was created, before this comment existed) — it was
+            // overwriting the list with pre-submission data, causing the user's
+            // own comment to flicker/disappear right after posting. The sync
+            // useEffect above (watching currentPost?.comments) already handles
+            // this correctly once fetchActivePulses() updates the store, exactly
+            // like the EDIT branch above already relies on it — no manual
+            // reconciliation needed here either.
           }
         }
       }
@@ -334,7 +403,9 @@ export function PostCommentsModal({ postId, apiPostId, visible, onClose }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [inputText, isSubmitting, postId, effectiveApiId, editingComment, editComment, createComment, fetchActivePulses, user, currentPost]);
+  // [FIX HIGH] currentPost removed from deps — its only usage was in the
+  // stale-closure block removed above.
+  }, [inputText, isSubmitting, postId, effectiveApiId, editingComment, editComment, createComment, fetchActivePulses, user]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   //  DELETE
@@ -350,6 +421,7 @@ export function PostCommentsModal({ postId, apiPostId, visible, onClose }) {
           style: 'destructive',
           onPress: async () => {
             haptic('medium');
+            trackEvent('comment_deleted', { postId: postId }); // 👈 הדיווח
             // Optimistic remove
             setLiveComments((prev) => prev.filter((c) => String(c.id) !== String(comment.id)));
 
@@ -396,11 +468,31 @@ export function PostCommentsModal({ postId, apiPostId, visible, onClose }) {
     setProfilePeekUser({ id: comment.userId, name: comment.username || 'User', avatarUrl: comment.avatar });
   }, [setProfilePeekUser]);
 
+  // ✅ ה-Hook הזה זז למעלה, לפני ה-return null
+  const handleReportComment = useCallback((comment) => {
+    const reportedId = comment.userId;
+    const reportedName = comment.username || 'User';
+    if (!reportedId || String(reportedId) === String(user?.id)) return;
+    Alert.alert(
+      `Report ${reportedName}`,
+      'Why are you reporting this person?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: '😤 Harassment or threats',  onPress: async () => { const ok = await _submitSecurityReport(reportedId, 'harassment'); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this.' : 'Could not submit.'); } },
+        { text: '🚫 Spam or advertising',    onPress: async () => { const ok = await _submitSecurityReport(reportedId, 'spam'); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this.' : 'Could not submit.'); } },
+        { text: '🔞 Inappropriate content',  onPress: async () => { const ok = await _submitSecurityReport(reportedId, 'inappropriate_content'); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this.' : 'Could not submit.'); } },
+      ],
+    );
+  }, [user?.id]);
+
+  // ─── עכשיו ה-if בסדר, כי כל ה-Hooks כבר הוגדרו ───
   if (!visible) return null;
 
   const ACCENT = brand?.blue || '#0A84FF';
   const BG     = isDark ? '#0D0D0D' : '#FFFFFF';
   const BORDER = isDark ? '#2A2A2A' : '#F0F0F0';
+  
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -468,6 +560,7 @@ export function PostCommentsModal({ postId, apiPostId, visible, onClose }) {
                   onEdit={handleEditStart}
                   onDelete={handleDelete}
                   onUserPress={handleUserPress}
+              onReport={handleReportComment}
                 />
               ))}
             </>

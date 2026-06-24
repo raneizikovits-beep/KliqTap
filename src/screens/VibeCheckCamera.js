@@ -40,7 +40,7 @@ import * as PulseService from '../store/pulse.service';
 // Constants
 // ─────────────────────────────────────────────
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window'); // ⭐️ FIX: `width` was destructured but never used anywhere in this file — removed.
 
 /**
  * Available text overlay colours.
@@ -427,6 +427,16 @@ export default function VibeCheckCamera({ onClose }) {
   }, [isCameraReady, isRecording]);
 
   const handleStopRecording = useCallback(() => {
+    // ⭐️ FIX: a press shorter than RECORD_INIT_DELAY_MS used to leave the
+    // pending recordAsync() timer alive — it would fire AFTER this function
+    // already reset the UI to idle, silently starting a real recording the
+    // user has no way to stop (isRecording is already false on the JS side).
+    // Cancelling the timer here closes that gap regardless of how the camera
+    // module behaves if stopRecording() is called before recordAsync() runs.
+    if (recordingTimerRef.current) {
+      clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
     if (isRecording && cameraRef.current) {
       cameraRef.current.stopRecording();
       if (mountedRef.current) {

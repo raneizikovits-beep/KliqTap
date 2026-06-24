@@ -1,11 +1,43 @@
 // client/src/utils/search.utils.js
-// Shared normalization & helpers for search results across SearchScreen and SearchSheet
+// v1.1 — Shared normalization & helpers for search results across SearchScreen and SearchSheet
+//
+// [V1.1 CHANGES — Engineering Audit Fixes]:
+//   • [FIX MEDIUM] deriveItemType: null/undefined guard added — exported functions
+//                  must be safe for any caller, not just normalizeResultItem.
+//   • [NEW]        @typedef NormalizedItem defined — was referenced in JSDoc of
+//                  normalizeResultItem but never declared. Restores IDE autocompletion.
+//
+// Everything else (normalizeResultItem, flattenSearchData, matchesCategory, buildTheme)
+// is production-quality and unchanged.
+
+/**
+ * @typedef {object} NormalizedItem
+ * @property {string}  id           - Stable string ID (never random)
+ * @property {string}  type         - 'user' | 'group' | 'event' | 'post' | 'unknown'
+ * @property {string}  title        - Display name or title
+ * @property {string}  subTitle     - Handle (@username) or description snippet
+ * @property {string|null} image    - Avatar / image URL, or null
+ * @property {object}  originalData - The raw API payload, unmodified
+ * @property {boolean} isUser
+ * @property {boolean} isGroup
+ * @property {boolean} isEvent
+ * @property {boolean} isPost
+ */
 
 /**
  * Derives the entity type from a raw API item.
  * Priority: explicit `type` field → field-based heuristics → 'unknown'
+ *
+ * @param {object|null|undefined} data
+ * @returns {'user'|'group'|'event'|'post'|'unknown'}
  */
 export const deriveItemType = (data) => {
+    // [FIX MEDIUM] Exported functions must guard against direct calls with null/undefined.
+    // normalizeResultItem always passes a safe object, but this function is part of the
+    // public API surface — a caller passing null would previously crash with:
+    //   TypeError: Cannot read properties of null (reading 'type')
+    if (!data || typeof data !== 'object') return 'unknown';
+
     if (data.type === 'user')  return 'user';
     if (data.type === 'group') return 'group';
     if (data.type === 'event') return 'event';
@@ -92,18 +124,25 @@ export const matchesCategory = (item, category) => {
 /**
  * Builds a compact theme object from a boolean dark-mode flag.
  * Centralises all conditional colour logic so JSX stays clean.
+ *
+ * Note: this is a pure function called on every render — memoize at the
+ * call site with useMemo(()=> buildTheme(isDark), [isDark]) if profiling
+ * shows it in a hot path.
+ *
+ * @param {boolean} isDark
+ * @returns {object}
  */
 export const buildTheme = (isDark) => ({
-    bg:           isDark ? '#000'     : '#F9FAFB',
-    surface:      isDark ? '#1C1C1E'  : '#fff',
-    surfaceAlt:   isDark ? '#2C2C2E'  : '#F5F5F5',
-    border:       isDark ? '#333'     : '#f0f0f0',
-    text:         isDark ? '#fff'     : '#111',
-    textSecondary:isDark ? '#aaa'     : '#888',
-    textMuted:    isDark ? '#666'     : '#ccc',
-    inputBg:      isDark ? '#1C1C1E'  : '#e9ecef',
-    iconColor:    isDark ? '#888'     : '#999',
-    chipBorder:   isDark ? '#333'     : 'transparent',
-    cardBorder:   isDark ? '#333'     : 'transparent',
+    bg:            isDark ? '#000'    : '#F9FAFB',
+    surface:       isDark ? '#1C1C1E' : '#fff',
+    surfaceAlt:    isDark ? '#2C2C2E' : '#F5F5F5',
+    border:        isDark ? '#333'    : '#f0f0f0',
+    text:          isDark ? '#fff'    : '#111',
+    textSecondary: isDark ? '#aaa'    : '#888',
+    textMuted:     isDark ? '#666'    : '#ccc',
+    inputBg:       isDark ? '#1C1C1E' : '#e9ecef',
+    iconColor:     isDark ? '#888'    : '#999',
+    chipBorder:    isDark ? '#333'    : 'transparent',
+    cardBorder:    isDark ? '#333'    : 'transparent',
     isDark,
 });

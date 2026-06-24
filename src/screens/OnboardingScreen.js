@@ -1,6 +1,7 @@
 // client/src/screens/OnboardingScreen.js
 // ⭐️ FULL DARK MODE COMPATIBLE - ALL ORIGINAL FUNCTIONS PRESERVED ⭐️
 
+import { trackEvent } from '../utils/analytics'; // 👈 הייבוא החדש שלנו
 import React, { useState, useCallback } from 'react';
 import { SafeAreaView } from "react-native-safe-area-context"; 
 import { styles as globalStyles } from '../constants/styles';
@@ -35,13 +36,20 @@ export default function OnboardingScreen() {
 
         setLoading(true);
         try {
+            trackEvent('onboarding_completed', { userId: user?.id, intentLength: intentText.length });
             await submitOnboarding(intentText);
+            // submitOnboarding normally navigates away; if it doesn't (race /
+            // error path not caught below) the finally block resets loading.
         } catch (e) {
-            console.error("Onboarding Error:", e.message);
-            setError(e.message || "An unknown error occurred.");
+            const msg = e instanceof Error ? e.message : 'An unknown error occurred.';
+            console.error("Onboarding Error:", msg);
+            setError(msg);
+        } finally {
+            // Safety net: if the component is still mounted (submitOnboarding
+            // did NOT navigate away), clear the spinner so it can't get stuck.
             setLoading(false);
         }
-    }, [intentText, submitOnboarding]);
+    }, [intentText, submitOnboarding, user?.id]);
 
     return (
         <SafeAreaView style={[localStyles.safeArea, { backgroundColor: isDark ? '#000' : brand.bg }]}>

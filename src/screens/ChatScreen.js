@@ -1,58 +1,46 @@
 // client/src/screens/ChatScreen.js
-// ⭐️ PRODUCTION GRADE v6 — Bug-free, robust, modern ⭐️
-//
-// ═══════════════════════════════════════════════════════════════
-// FIXES IN v6 (vs v5):
-//
-//   [FIX-8] CRITICAL: closeChat() was firing on every re-render of the
-//           main useEffect, not just on screen unmount. This caused the
-//           WebSocket room to be abandoned mid-session, making messages
-//           one-directional until a manual refresh. Fixed by isolating
-//           closeChat() into a dedicated unmount-only effect with an
-//           empty dependency array.
-//
-//   [FIX-9] Call buttons were silently failing when metadata/otherUserId
-//           wasn't resolved yet (race condition on screen open). Now
-//           resolves the peer ID dynamically via resolveUser() as a
-//           fallback before giving up, and shows a loading indicator
-//           on the call button while resolving.
-//
-//   [FIX-10] resolveUser dependency was missing from the call handlers'
-//            useCallback dependency arrays, causing stale closure bugs.
-//
-//   [FIX-11] useAppStore was called TWICE (lines 90 and 313 in v5),
-//            creating two separate subscriptions. Merged into one selector.
-//
-//   [FIX-12] renderHeader() was a plain function re-created on every
-//            render. Converted to React.memo component so it only
-//            re-renders when its own props change.
-//
-// ═══════════════════════════════════════════════════════════════
-// FIXES PRESERVED FROM v5:
-//   [FIX-7] No direct Supabase — all user lookups via resolveUser/backend
-//   [FIX-6] chatService.joinChat() + loadHistory() on chat open
-//   [FIX-1..5] Header DM title, subtitle, long-press edit/delete, edit UI
-// ═══════════════════════════════════════════════════════════════
+// ⭐️ PRODUCTION GRADE V10 — Infinite Scroll, Attachments, Image Viewer & Save to Gallery ⭐️
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
   KeyboardAvoidingView, Platform, SafeAreaView,
-  StyleSheet, FlatList, Alert, ActivityIndicator,
+  StyleSheet, FlatList, Alert, ActivityIndicator, Image, Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system'; // 👈 נוסף לשמירת קבצים
+import * as MediaLibrary from 'expo-media-library'; // 👈 נוסף לשמירת קבצים לגלריה
 import { useAppStore } from '../store/useAppStore';
 import { chatService } from '../store/chatService';
 import { brand } from '../constants/data';
+import { trackEvent } from '../utils/analytics'; 
+
+// ─── Security Report Helper ───────────────────────────────────────────────────
+async function _submitSecurityReport(reportedId, reason, token) {
+    if (!reportedId || !token) return false;
+    try {
+        const resp = await fetch('https://api.kliqtap.com/security/report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ reportedId: String(reportedId), reason }),
+        });
+        return resp.ok;
+    } catch { return false; }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
 // MessageBubble
 // ─────────────────────────────────────────────
-const MessageBubble = memo(({ message, currentUserId, onUserPress, onLongPress }) => {
+const MessageBubble = memo(({ message, currentUserId, onUserPress, onLongPress, onImagePress }) => {
   const isMine    = String(message.sender?.id) === String(currentUserId);
   const isDeleted = message.deleted  || message.isDeleted;
   const isEdited  = message.edited   || message.isEdited;
   const isPending = !!message.pending;
+
+  // מזהה אם יש תמונה בהודעה מהשרת
+  const attachmentUrl = message.attachmentUrl || message.imageUrl || message.image || message.fileUrl;
 
   const time = useMemo(() => {
     if (!message.time) return '';
@@ -88,9 +76,37 @@ const MessageBubble = memo(({ message, currentUserId, onUserPress, onLongPress }
         {isDeleted ? (
           <Text style={localStyles.deletedText}>🚫 Message deleted</Text>
         ) : (
-          <Text style={[localStyles.messageText, isMine && { color: '#fff' }]}>
-            {message.text || message.body}
-          </Text>
+          <>
+            {message.replyTo && (
+              <View style={[
+                localStyles.replyQuote,
+                isMine ? localStyles.replyQuoteMine : localStyles.replyQuoteTheirs,
+              ]}>
+                <Text style={[localStyles.replyQuoteAuthor, { color: isMine ? 'rgba(255,255,255,0.85)' : brand.blue }]} numberOfLines={1}>
+                  {message.replyTo.sender?.name || message.replyTo.sender?.username || 'Message'}
+                </Text>
+                <Text style={[localStyles.replyQuoteText, { color: isMine ? 'rgba(255,255,255,0.7)' : brand.soft }]} numberOfLines={2}>
+                  {message.replyTo.text || message.replyTo.body || '↩ Original message'}
+                </Text>
+              </View>
+            )}
+            
+            {/* ⭐️ תמונה לחיצה שפותחת את ה-Viewer */}
+            {attachmentUrl && typeof attachmentUrl === 'string' && (
+              <TouchableOpacity onPress={() => onImagePress(attachmentUrl)} activeOpacity={0.9}>
+                <Image 
+                  source={{ uri: attachmentUrl }} 
+                  style={[localStyles.bubbleImage, { marginBottom: (message.text || message.body) ? 8 : 0 }]} 
+                />
+              </TouchableOpacity>
+            )}
+
+            {(message.text || message.body) ? (
+                <Text style={[localStyles.messageText, isMine && { color: '#fff' }]}>
+                  {message.text || message.body}
+                </Text>
+            ) : null}
+          </>
         )}
 
         <View style={localStyles.metaRow}>
@@ -169,9 +185,8 @@ const ChatHeader = memo(({
 // Main Screen
 // ─────────────────────────────────────────────
 export default function ChatScreen({ navigation }) {
-  // [FIX-11] Single unified store subscription — no double subscriptions
   const {
-    currentChatId, chatHistory, user, groups, chatMetadata,
+    currentChatId, chatHistory, user, groups, chatMetadata, token,
     sendChatMessage, closeChat, getOtherUserIdInDM,
     setProfilePeekUser, editChatMessage, deleteChatMessage,
     fetchConversations, resolveUser, userCache,
@@ -180,6 +195,7 @@ export default function ChatScreen({ navigation }) {
     currentChatId:      state.currentChatId,
     chatHistory:        state.chatHistory,
     user:               state.user,
+    token:              state.token,
     groups:             state.groups,
     chatMetadata:       state.chatMetadata,
     sendChatMessage:    state.sendChatMessage,
@@ -199,11 +215,17 @@ export default function ChatScreen({ navigation }) {
   const [messageText,    setMessageText]    = useState('');
   const [chatTitle,      setChatTitle]      = useState('Loading...');
   const [editingMessage, setEditingMessage] = useState(null);
+  const [replyingTo,     setReplyingTo]     = useState(null); 
+  const [attachmentUri,  setAttachmentUri]  = useState(null); 
   const [isCalling,      setIsCalling]      = useState(false);
+  const [viewingImage,   setViewingImage]   = useState(null); // ⭐️ סטייט לתמונה במסך מלא
+  const [isSavingImage,  setIsSavingImage]  = useState(false);
+  
+  const [isLoadingMore,  setIsLoadingMore]  = useState(false);
+  const isPaginatingRef                     = useRef(false);
 
   const flatListRef = useRef(null);
 
-  // Normalize chat ID once
   const safeChatId  = useMemo(() => String(currentChatId || ''), [currentChatId]);
   const metadata    = chatMetadata?.[safeChatId];
   const isDMChat    = !!metadata?.isDM;
@@ -214,27 +236,20 @@ export default function ChatScreen({ navigation }) {
     [currentChatId, getOtherUserIdInDM],
   );
 
-  // ── Boot: fetch conversations if metadata missing ──────────────
   useEffect(() => {
     if (fetchConversations && !metadata) {
       fetchConversations();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Join WebSocket room + load history on open ─────────────────
-  // Intentionally not leaving room on unmount (stays live in background).
   useEffect(() => {
     if (!currentChatId) return;
     const chatIdStr = String(currentChatId);
     chatService.joinChat(chatIdStr);
     chatService.loadHistory(chatIdStr);
+    chatService.markChatAsRead(chatIdStr);
   }, [currentChatId]);
 
-  // ── [FIX-8] closeChat ONLY on unmount — never on re-render ─────
-  // This was the root cause of one-directional messages: closeChat()
-  // was in the dependency array of the name-resolver effect, so every
-  // time metadata/groups/chatHistory changed it abandoned the WS room.
   const closeChatRef = useRef(closeChat);
   const currentChatIdRef = useRef(currentChatId);
   useEffect(() => { closeChatRef.current = closeChat; }, [closeChat]);
@@ -242,29 +257,24 @@ export default function ChatScreen({ navigation }) {
 
   useEffect(() => {
     return () => {
-      // Capture latest values via refs so the closure is never stale
       if (currentChatIdRef.current) closeChatRef.current?.();
     };
-  }, []); // ← Empty deps: fires ONLY on unmount
+  }, []); 
 
-  // ── Navigate away if chat lost ─────────────────────────────────
   useEffect(() => {
     if (!currentChatId) navigation.goBack();
   }, [currentChatId, navigation]);
 
-  // ── Resolve chat display name ──────────────────────────────────
   useEffect(() => {
     if (!currentChatId) return;
     let cancelled = false;
 
     const resolve = async () => {
-      // Post thread
       if (safeChatId.startsWith('post:')) {
         if (!cancelled) setChatTitle('Post Comments');
         return;
       }
 
-      // DM with known metadata
       if (metadata?.isDM) {
         const otherId = metadata.otherUserId || otherUserId;
         if (metadata.fallbackName) {
@@ -277,7 +287,6 @@ export default function ChatScreen({ navigation }) {
             const resolved = cached ?? (resolveUser ? await resolveUser(otherId) : null);
             if (!cancelled) setChatTitle(resolved?.name || resolved?.username || 'Private Chat');
           } catch {
-            // Fall back to last known message sender
             const other = messages.find(m => String(m.sender?.id) !== String(user?.id));
             if (!cancelled) setChatTitle(other?.sender?.name || other?.sender?.username || 'Private Chat');
           }
@@ -285,21 +294,18 @@ export default function ChatScreen({ navigation }) {
         }
       }
 
-      // Known group
-      const group = groups.find(g => String(g.id) === safeChatId);
+      const group = groups?.find(g => String(g.id) === safeChatId);
       if (group) {
         if (!cancelled) setChatTitle(group.name);
         return;
       }
 
-      // Extract from existing messages
       const other = messages.find(m => String(m.sender?.id) !== String(user?.id));
       if (other?.sender) {
         if (!cancelled) setChatTitle(other.sender.name || other.sender.username || 'Chat');
         return;
       }
 
-      // Last resort: resolve otherUserId
       if (otherUserId) {
         try {
           const cached   = userCache?.[otherUserId];
@@ -316,42 +322,127 @@ export default function ChatScreen({ navigation }) {
 
     resolve();
 
-    // Scroll to bottom shortly after opening
-    const t = setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
+    const t = setTimeout(() => {
+        if (!isPaginatingRef.current) flatListRef.current?.scrollToEnd({ animated: true });
+    }, 150);
 
     return () => {
       cancelled = true;
       clearTimeout(t);
-      // ⚠️  Do NOT call closeChat here — that's handled by the unmount effect above
     };
-  }, [
-    currentChatId, safeChatId, metadata, otherUserId,
-    groups, messages, user?.id, userCache, resolveUser,
-  ]);
+  }, [currentChatId, safeChatId, metadata, otherUserId, groups, messages, user?.id, userCache, resolveUser]);
 
-  // ── Send / Edit ────────────────────────────────────────────────
+  const handleLoadMore = useCallback(() => {
+    if (isLoadingMore || messages.length < 50) return; 
+    const oldestMsg = messages[0]; 
+    
+    if (oldestMsg && oldestMsg.id) {
+        isPaginatingRef.current = true; 
+        setIsLoadingMore(true);
+        chatService.loadHistory(safeChatId, oldestMsg.id); 
+        
+        setTimeout(() => { setIsLoadingMore(false); }, 1500);
+    }
+  }, [isLoadingMore, messages, safeChatId]);
+
+  const handleScroll = useCallback((event) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    if (offsetY < 50 && !isLoadingMore) {
+        handleLoadMore();
+    }
+  }, [handleLoadMore, isLoadingMore]);
+
+  const handlePickAttachment = useCallback(async () => {
+    try {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission Denied', 'We need camera roll permissions to attach files.');
+            return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.All, 
+            quality: 0.8,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+            setAttachmentUri(result.assets[0].uri);
+        }
+    } catch (error) {
+        console.warn('[Chat] Attachment error:', error);
+        Alert.alert('Error', 'Could not pick the file.');
+    }
+  }, []);
+
   const handleSend = useCallback(() => {
     const trimmed = messageText.trim();
-    if (!trimmed) return;
+    if (!trimmed && !attachmentUri) return;
 
     if (editingMessage) {
+      trackEvent('chat_message_edited', { isDM: isDMChat });
       editChatMessage?.(editingMessage.id, trimmed);
       setEditingMessage(null);
     } else {
-      sendChatMessage?.(trimmed);
+      trackEvent('chat_message_sent', { isDMChat, hasReply: !!replyingTo, hasAttachment: !!attachmentUri });
+      isPaginatingRef.current = false; 
+      
+      sendChatMessage?.(trimmed, { 
+          replyToId: replyingTo?.id,
+          attachmentUri: attachmentUri 
+      });
+      
+      setReplyingTo(null);
+      setAttachmentUri(null); 
     }
     setMessageText('');
-  }, [messageText, editingMessage, sendChatMessage, editChatMessage]);
+  }, [messageText, attachmentUri, editingMessage, replyingTo, sendChatMessage, editChatMessage, isDMChat]);
 
   const cancelEdit = useCallback(() => {
     setEditingMessage(null);
     setMessageText('');
   }, []);
 
-  // ── Long-press actions ─────────────────────────────────────────
+  const cancelReply = useCallback(() => {
+    setReplyingTo(null);
+  }, []);
+
+  // ── ⭐️ פונקציית שמירת התמונה לגלריה ⭐️ ──
+  const handleSaveImageToGallery = useCallback(async (url) => {
+      if (!url) return;
+      setIsSavingImage(true);
+      try {
+          const { status } = await MediaLibrary.requestPermissionsAsync();
+          if (status !== 'granted') {
+              Alert.alert('Permission Needed', 'We need access to your gallery to save images.');
+              setIsSavingImage(false);
+              return;
+          }
+
+          let fileUri = url;
+          // אם זה URL מהשרת, חייבים להוריד אותו לזיכרון המקומי קודם
+          if (url.startsWith('http')) {
+              const filename = url.split('/').pop().split('?')[0] || `kliq_img_${Date.now()}.jpg`;
+              const localPath = `${FileSystem.documentDirectory}${filename}`;
+              const downloaded = await FileSystem.downloadAsync(url, localPath);
+              fileUri = downloaded.uri;
+          }
+
+          await MediaLibrary.saveToLibraryAsync(fileUri);
+          Alert.alert('Success ✅', 'Image saved to your gallery!');
+      } catch (err) {
+          console.warn('[ChatScreen] Save image error:', err);
+          Alert.alert('Error', 'Could not save the image. Try again.');
+      } finally {
+          setIsSavingImage(false);
+      }
+  }, []);
+
   const handleLongPressMessage = useCallback((message, isMine) => {
     if (!message?.id) return;
     const buttons = [];
+
+    buttons.push({
+      text: '↩ Reply',
+      onPress: () => setReplyingTo(message),
+    });
 
     if (isMine) {
       buttons.push({
@@ -385,13 +476,29 @@ export default function ChatScreen({ navigation }) {
         style: 'destructive',
         onPress: () => deleteChatMessage?.(message.id, false),
       });
+      if (message.sender?.id) {
+        buttons.push({
+          text: '🚩 Report User',
+          onPress: () => {
+            Alert.alert(
+              'Report User',
+              'Why are you reporting this person?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Spam or scam',           onPress: async () => { const ok = await _submitSecurityReport(message.sender.id, 'spam', token); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this.' : 'Could not submit. Try again.'); } },
+                { text: 'Harassment or threats',  onPress: async () => { const ok = await _submitSecurityReport(message.sender.id, 'harassment', token); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this.' : 'Could not submit. Try again.'); } },
+                { text: 'Inappropriate content',  onPress: async () => { const ok = await _submitSecurityReport(message.sender.id, 'inappropriate_content', token); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this.' : 'Could not submit. Try again.'); } },
+              ],
+            );
+          },
+        });
+      }
     }
 
     buttons.push({ text: 'Cancel', style: 'cancel' });
     Alert.alert('Message Options', '', buttons);
-  }, [deleteChatMessage]);
+  }, [deleteChatMessage, token]);
 
-  // ── [FIX-9] Call handlers with race-safe peer resolution ───────
   const resolveCallTarget = useCallback(async () => {
     let id = otherUserId || metadata?.otherUserId;
     if (!id && resolveUser && safeChatId) {
@@ -401,7 +508,6 @@ export default function ChatScreen({ navigation }) {
       } catch { /* ignore */ }
     }
     return id ? String(id) : null;
-  // [FIX-10] resolveUser is now in deps — no more stale closure
   }, [otherUserId, metadata, resolveUser, safeChatId]);
 
   const handleStartVoiceCall = useCallback(async () => {
@@ -409,13 +515,13 @@ export default function ChatScreen({ navigation }) {
     try {
       const otherId = await resolveCallTarget();
       if (!otherId) {
-        Alert.alert('Cannot Call', 'Could not identify the other user. Try again in a moment.');
+        Alert.alert('Cannot Call', 'Could not identify the other user.');
         return;
       }
       await startCall?.(otherId, false);
       setVoiceModalOpen?.(true);
     } catch (e) {
-      Alert.alert('Call Error', e.message || 'Could not start voice call.');
+      Alert.alert('Call Error', e.message);
     } finally {
       setIsCalling(false);
     }
@@ -426,27 +532,29 @@ export default function ChatScreen({ navigation }) {
     try {
       const otherId = await resolveCallTarget();
       if (!otherId) {
-        Alert.alert('Cannot Call', 'Could not identify the other user. Try again in a moment.');
+        Alert.alert('Cannot Call', 'Could not identify the other user.');
         return;
       }
       await startCall?.(otherId, true);
       setVideoModalOpen?.(true);
     } catch (e) {
-      Alert.alert('Call Error', e.message || 'Could not start video call.');
+      Alert.alert('Call Error', e.message);
     } finally {
       setIsCalling(false);
     }
   }, [resolveCallTarget, startCall, setVideoModalOpen]);
 
-  // ── Render ─────────────────────────────────────────────────────
   const renderItem = useCallback(({ item }) => (
     <MessageBubble
       message={item}
       currentUserId={user?.id}
       onUserPress={setProfilePeekUser}
       onLongPress={handleLongPressMessage}
+      onImagePress={setViewingImage} // 👈 חיבור לתצוגה המלאה
     />
   ), [user?.id, setProfilePeekUser, handleLongPressMessage]);
+
+  const canSend = messageText.trim().length > 0 || attachmentUri;
 
   return (
     <SafeAreaView style={localStyles.container}>
@@ -470,8 +578,19 @@ export default function ChatScreen({ navigation }) {
           renderItem={renderItem}
           keyExtractor={(item, index) => item?.id ? String(item.id) : `msg-${index}`}
           contentContainerStyle={localStyles.listContent}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onContentSizeChange={() => {
+              if (!isPaginatingRef.current) {
+                  flatListRef.current?.scrollToEnd({ animated: true });
+              } else {
+                  isPaginatingRef.current = false;
+              }
+          }}
+          onLayout={() => {
+              if (!isPaginatingRef.current) flatListRef.current?.scrollToEnd({ animated: false });
+          }}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          ListHeaderComponent={isLoadingMore ? <ActivityIndicator size="small" color={brand.blue} style={{ marginVertical: 10 }} /> : null}
           showsVerticalScrollIndicator={false}
           removeClippedSubviews
           windowSize={10}
@@ -491,10 +610,38 @@ export default function ChatScreen({ navigation }) {
           </View>
         )}
 
+        {replyingTo && (
+          <View style={[localStyles.editBanner, localStyles.replyBanner]}>
+            <Ionicons name="return-up-back" size={16} color={brand.green} />
+            <Text style={[localStyles.editBannerText, { color: brand.green }]} numberOfLines={1}>
+              ↩ {replyingTo.sender?.name || replyingTo.sender?.username || 'Message'}: {replyingTo.text || replyingTo.body || '…'}
+            </Text>
+            <TouchableOpacity onPress={cancelReply} style={localStyles.editCancel} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={20} color={brand.red} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {attachmentUri && (
+          <View style={localStyles.attachmentPreviewBanner}>
+             <Image source={{ uri: attachmentUri }} style={localStyles.previewImage} />
+             <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: 'bold', color: brand.ink }}>Attached Media</Text>
+             </View>
+             <TouchableOpacity onPress={() => setAttachmentUri(null)} style={localStyles.removePreviewBtn}>
+                <Ionicons name="close-circle" size={24} color={brand.red} />
+             </TouchableOpacity>
+          </View>
+        )}
+
         <View style={localStyles.inputArea}>
+          <TouchableOpacity onPress={handlePickAttachment} style={localStyles.attachBtn}>
+             <Ionicons name="attach" size={28} color={brand.soft} />
+          </TouchableOpacity>
+
           <TextInput
             style={localStyles.input}
-            placeholder={editingMessage ? 'Edit message...' : 'Type a message...'}
+            placeholder={editingMessage ? 'Edit message...' : replyingTo ? 'Write a reply...' : 'Type a message...'}
             placeholderTextColor={brand.soft}
             value={messageText}
             onChangeText={setMessageText}
@@ -505,14 +652,41 @@ export default function ChatScreen({ navigation }) {
           />
           <TouchableOpacity
             onPress={handleSend}
-            disabled={!messageText.trim()}
-            style={[localStyles.sendButton, !messageText.trim() && localStyles.sendButtonDisabled]}
+            disabled={!canSend}
+            style={[localStyles.sendButton, !canSend && localStyles.sendButtonDisabled]}
             activeOpacity={0.75}
           >
             <Ionicons name={editingMessage ? 'checkmark' : 'send'} size={20} color="#fff" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* ⭐️ מודל תצוגת התמונה המלאה (Full Screen Viewer) ⭐️ */}
+      <Modal visible={!!viewingImage} transparent={true} animationType="fade" onRequestClose={() => setViewingImage(null)}>
+          <View style={localStyles.fullScreenViewer}>
+              <SafeAreaView style={localStyles.viewerHeader}>
+                  <TouchableOpacity onPress={() => setViewingImage(null)} style={localStyles.viewerIconBtn}>
+                      <Ionicons name="close" size={30} color="#fff" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                      onPress={() => handleSaveImageToGallery(viewingImage)} 
+                      style={localStyles.viewerIconBtn}
+                      disabled={isSavingImage}
+                  >
+                      {isSavingImage ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                          <Ionicons name="download-outline" size={30} color="#fff" />
+                      )}
+                  </TouchableOpacity>
+              </SafeAreaView>
+              {viewingImage && (
+                  <Image source={{ uri: viewingImage }} style={localStyles.fullScreenImage} />
+              )}
+          </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -525,7 +699,6 @@ const localStyles = StyleSheet.create({
   flexOne:      { flex: 1 },
   listContent:  { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 24 },
 
-  // Header
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 10, paddingVertical: 10,
@@ -543,7 +716,6 @@ const localStyles = StyleSheet.create({
     backgroundColor: '#F5F7FA', marginLeft: 6,
   },
 
-  // Bubbles
   messageContainer:       { marginVertical: 3, maxWidth: '80%' },
   messageContainerMine:   { alignSelf: 'flex-end' },
   messageContainerTheirs: { alignSelf: 'flex-start' },
@@ -557,13 +729,13 @@ const localStyles = StyleSheet.create({
   bubbleTheirs:  { backgroundColor: '#fff', borderBottomLeftRadius: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E8E8E8' },
   bubbleDeleted: { opacity: 0.55, backgroundColor: '#EFEFEF' },
   bubblePending: { opacity: 0.7 },
+  bubbleImage:   { width: 220, height: 220, borderRadius: 12, resizeMode: 'cover', backgroundColor: 'rgba(0,0,0,0.05)' },
   deletedText:   { fontStyle: 'italic', color: '#999', fontSize: 14 },
   senderName:    { fontSize: 12, fontWeight: '700', marginBottom: 3, color: brand.soft },
   messageText:   { fontSize: 15.5, lineHeight: 22, color: brand.ink },
   metaRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4 },
   timeText:      { fontSize: 10, color: brand.soft },
 
-  // Edit banner
   editBanner: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 12, paddingVertical: 8,
@@ -573,7 +745,26 @@ const localStyles = StyleSheet.create({
   editBannerText: { flex: 1, marginLeft: 8, color: brand.blue, fontSize: 13, fontStyle: 'italic' },
   editCancel:     { padding: 4 },
 
-  // Input area
+  replyBanner: { backgroundColor: '#E8F5E9', borderTopColor: '#A5D6A7' },
+
+  replyQuote: {
+    borderLeftWidth: 3, paddingLeft: 8, paddingVertical: 4,
+    borderRadius: 4, marginBottom: 6,
+  },
+  replyQuoteMine:   { borderLeftColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(0,0,0,0.12)' },
+  replyQuoteTheirs: { borderLeftColor: brand.blue,              backgroundColor: '#F0F4FF' },
+  replyQuoteAuthor: { fontSize: 11, fontWeight: '700', marginBottom: 2 },
+  replyQuoteText:   { fontSize: 13, lineHeight: 18 },
+
+  attachmentPreviewBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: '#f8f9fa',
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E0E0E0',
+  },
+  previewImage:     { width: 44, height: 44, borderRadius: 8, marginRight: 10 },
+  removePreviewBtn: { padding: 5 },
+
   inputArea: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 10, paddingVertical: 8,
@@ -581,6 +772,7 @@ const localStyles = StyleSheet.create({
     borderTopColor: '#E0E0E0',
     backgroundColor: '#fff',
   },
+  attachBtn: { padding: 6, marginRight: 2 },
   input: {
     flex: 1, minHeight: 42, maxHeight: 100,
     paddingHorizontal: 16, paddingVertical: 10,
@@ -596,4 +788,30 @@ const localStyles = StyleSheet.create({
     elevation: 3,
   },
   sendButtonDisabled: { opacity: 0.45, shadowOpacity: 0 },
+
+  // ⭐️ Full Screen Viewer Styles ⭐️
+  fullScreenViewer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewerHeader: {
+    position: 'absolute',
+    top: 0, width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 20 : 40,
+    zIndex: 10,
+  },
+  viewerIconBtn: {
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 30,
+  },
+  fullScreenImage: {
+    width: '100%', height: '80%',
+    resizeMode: 'contain',
+  },
 });

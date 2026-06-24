@@ -8,6 +8,8 @@ import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native
 import { Ionicons } from '@expo/vector-icons';
 import { brand } from '../constants/data';
 import { useAppStore } from '../store/useAppStore';
+import { trackEvent } from '../utils/analytics'; // 👈 הייבוא החדש שלנו
+
 
 const ACTIONS = [
     { 
@@ -94,6 +96,7 @@ const SpeedDial = (props) => {
                                     { backgroundColor: isDark ? '#1C1C1E' : item.bg, borderColor: item.color }
                                 ]}
                                 onPress={() => {
+                                    trackEvent('speed_dial_clicked', { action: item.id }); // 👈 הדיווח לפיירבייס
                                     onToggleMenu(); 
                                     if (props[item.actionProp]) props[item.actionProp](); 
                                 }}

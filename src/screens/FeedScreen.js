@@ -1,6 +1,6 @@
 // client/src/screens/FeedScreen.js
 // ═══════════════════════════════════════════════════════════════════════════════
-//  ⚡ KLIQTAP — FEED SCREEN v4.0 (ULTIMATE: DELETE + EDIT + PERSIST + MODERN)
+//  ⚡ KLIQTAP — FEED SCREEN v4.2 (ULTIMATE: AUTO-CAROUSEL + LOOP + GROUPING)
 //  Full-bleed immersive vertical snap feed — Food · Gym · Music · Travel · Art
 //  Global Follow State · Native Share API · Comments · Delete & Edit Posts
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -34,8 +34,9 @@ import { useNavigation } from '@react-navigation/native';
 import { useAppStore } from '../store/useAppStore';
 import { fetchAPI } from '../store/api';
 import * as Data from '../constants/data';
-
+import { trackEvent } from '../utils/analytics';
 import { PostCommentsModal } from '../components/modals/PostCommentsModal';
+import { PostLikesModal } from '../components/modals/PostLikesModal';
 
 // ─── Optional deps ─────────────────────────────────────────────────────────────
 let LinearGradient;
@@ -73,6 +74,7 @@ const VIBE_TABS = [
   { id: 'Music',  label: 'SING',  icon: 'musical-notes', accent: '#FF2D55' },
   { id: 'Travel', label: 'ROAM',  icon: 'airplane',      accent: '#00E5A0' },
   { id: 'Art',    label: 'ART',   icon: 'color-palette', accent: '#FFD200' },
+  { id: 'Jobs',   label: 'HIRE',  icon: 'briefcase',     accent: '#6C63FF' },
 ];
 
 const VIBE_META = {
@@ -81,6 +83,7 @@ const VIBE_META = {
   Music:  { label: 'SING FOR KLIQ 🎤', color: '#FF2D55', bg: ['#8E2DE2','#FF2D55'] },
   Travel: { label: 'ROAM 🌍',          color: '#00E5A0', bg: ['#00E5A0','#0072FF'] },
   Art:    { label: 'ART DROP 🎨',      color: '#FFD200', bg: ['#FF8A00','#FFD200'] },
+  Jobs:   { label: 'OPPORTUNITY 💼',   color: '#6C63FF', bg: ['#6C63FF','#3B2FCC'] },
 };
 
 const PLACEHOLDER_POSTS = [
@@ -218,14 +221,11 @@ const OptionsMenu = React.memo(({ visible, onClose, onDelete, onEdit, accentColo
           transform: [{ translateY }],
         }}
       >
-        {/* Drag handle */}
         <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#444', alignSelf: 'center', marginBottom: 20 }} />
-
         <Text style={{ color: '#666', fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textAlign: 'center', marginBottom: 16 }}>
           POST OPTIONS
         </Text>
 
-        {/* Edit option */}
         <TouchableOpacity
           onPress={() => { haptic('light'); onEdit(); onClose(); }}
           activeOpacity={0.75}
@@ -240,10 +240,8 @@ const OptionsMenu = React.memo(({ visible, onClose, onDelete, onEdit, accentColo
           </View>
         </TouchableOpacity>
 
-        {/* Divider */}
         <View style={{ height: 1, backgroundColor: '#2A2A2A', marginHorizontal: 28 }} />
 
-        {/* Delete option */}
         <TouchableOpacity
           onPress={() => { haptic('heavy'); onDelete(); onClose(); }}
           activeOpacity={0.75}
@@ -258,7 +256,6 @@ const OptionsMenu = React.memo(({ visible, onClose, onDelete, onEdit, accentColo
           </View>
         </TouchableOpacity>
 
-        {/* Cancel */}
         <TouchableOpacity
           onPress={onClose}
           activeOpacity={0.75}
@@ -272,22 +269,30 @@ const OptionsMenu = React.memo(({ visible, onClose, onDelete, onEdit, accentColo
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  FEED POST CARD — full-bleed, snap
+//  FEED POST CARD — ⭐️ AUTO-CAROUSEL WITH INFINITE LOOP & VIBE PICKER ⭐️
 // ═══════════════════════════════════════════════════════════════════════════════
+const QUICK_EMOJIS = ['❤️', '🔥', '😂', '😮', '😢', '👏'];
+
 const FeedCard = React.memo(({
-  post, isActive, currentUser,
+  postGroup, isActive, currentUser,
   onLike, onComment, onShare, onFollow, onDelete, onEditRequest,
-  userLiked, isFollowing,
+  userLiked, isFollowing, onOpenLikes, localVibe
 }) => {
   const [burstVisible, setBurstVisible] = useState(false);
   const [menuVisible,  setMenuVisible]  = useState(false);
+  const [showVibes, setShowVibes] = useState(false);
+
   const lastTap = useRef(0);
   const { scale: shareScale, onPressIn: sharePressIn, onPressOut: sharePressOut } = usePressScale(0.88);
   const likeScale = useRef(new Animated.Value(1)).current;
 
-  // Entrance slide-up when card becomes active
   const entranceY = useRef(new Animated.Value(30)).current;
   const entranceO = useRef(new Animated.Value(0)).current;
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const animProgress = useRef(new Animated.Value(0)).current;
+
+  const post = postGroup[currentIndex] || postGroup[0];
 
   useEffect(() => {
     if (isActive) {
@@ -297,21 +302,46 @@ const FeedCard = React.memo(({
         Animated.spring(entranceY, { toValue: 0, useNativeDriver: true, speed: 14, bounciness: 6 }),
         Animated.timing(entranceO, { toValue: 1, duration: 380, useNativeDriver: true }),
       ]).start();
+    } else {
+      setShowVibes(false); 
     }
   }, [isActive, entranceY, entranceO]);
 
-  // ── Is this post owned by the current logged-in user? ──
+  useEffect(() => {
+    if (!isActive) {
+      animProgress.setValue(0);
+      setCurrentIndex(0);
+      return;
+    }
+
+    animProgress.setValue(0);
+    Animated.timing(animProgress, {
+      toValue: 1,
+      duration: 5000,
+      easing: Easing.linear,
+      useNativeDriver: false
+    }).start(({ finished }) => {
+      if (finished) {
+        setCurrentIndex((prev) => (prev < postGroup.length - 1 ? prev + 1 : 0));
+        setShowVibes(false);
+      }
+    });
+  }, [isActive, currentIndex, postGroup.length, animProgress]);
+
   const isMyPost = Boolean(
     currentUser &&
     ((currentUser.id       && String(currentUser.id)       === String(post.author?.id)) ||
      (currentUser.username && currentUser.username         === post.author?.username))
   );
 
+  // ⭐️ 1. תיקון: המערכת זוכרת שעשית לייק גם אם ריעננת, וגם משתמשת בלייק ששמור בשרת 
+  const effectivelyLiked = userLiked || post.stats?.isLikedByMe;
+
   const handleDoubleTap = useCallback(() => {
     const now = Date.now();
     if (now - lastTap.current < 280) {
       haptic('medium');
-      onLike(post.id);
+      if (!effectivelyLiked) onLike(post.id, '❤️', false);
       setBurstVisible(true);
       setTimeout(() => setBurstVisible(false), 800);
       Animated.sequence([
@@ -320,13 +350,27 @@ const FeedCard = React.memo(({
       ]).start();
     }
     lastTap.current = now;
-  }, [onLike, post.id, likeScale]);
+  }, [onLike, post.id, likeScale, effectivelyLiked]);
 
   const handleLikeBtn = useCallback(() => {
     haptic('light');
-    onLike(post.id);
+    if (effectivelyLiked) {
+      onLike(post.id, null, true); // מסיר לייק
+    } else {
+      onLike(post.id, '❤️', false); // מוסיף לייק רגיל
+    }
     Animated.sequence([
       Animated.spring(likeScale, { toValue: 1.4, useNativeDriver: true, speed: 40, bounciness: 16 }),
+      Animated.spring(likeScale, { toValue: 1,   useNativeDriver: true, speed: 25, bounciness: 8 }),
+    ]).start();
+  }, [onLike, post.id, likeScale, effectivelyLiked]);
+
+  const handleVibeSelect = useCallback((vibe) => {
+    haptic('medium');
+    setShowVibes(false);
+    onLike(post.id, vibe, false); 
+    Animated.sequence([
+      Animated.spring(likeScale, { toValue: 1.5, useNativeDriver: true, speed: 40, bounciness: 20 }),
       Animated.spring(likeScale, { toValue: 1,   useNativeDriver: true, speed: 25, bounciness: 8 }),
     ]).start();
   }, [onLike, post.id, likeScale]);
@@ -352,83 +396,58 @@ const FeedCard = React.memo(({
       'Are you sure you want to delete this pulse? This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Forever',
-          style: 'destructive',
-          onPress: () => {
-            haptic('error');
-            onDelete(post.id);
-          },
-        },
+        { text: 'Delete Forever', style: 'destructive', onPress: () => { haptic('error'); onDelete(post.id); } },
       ]
     );
   }, [onDelete, post.id]);
 
   const avatarLetter = post.author?.username?.replace('@','')?.charAt(0)?.toUpperCase() || '?';
-  const likesDisplay = fmtNum((post.likes || 0) + (userLiked ? 1 : 0));
+  
+  // ספירת לייקים - לא סופר פעמיים אם השרת כבר עדכן
+  const likesDisplay = fmtNum((post.likes || post.stats?.likes || 0) + (userLiked && !post.stats?.isLikedByMe ? 1 : 0));
+  
   const commentsCount = fmtNum(
-    post.comments_count ??
-    (Array.isArray(post.comments) ? post.comments.length : (post.comments ?? 0))
+    post.comments_count ?? post.stats?.comments ?? (Array.isArray(post.comments) ? post.comments.length : 0)
   );
 
-  // Accent from vibe
   const vibeAccent = VIBE_META[post.vibe]?.color || '#8E2DE2';
+  
+  // ⭐️ 2. תיקון: אם יש לך אימוג'י בזיכרון המקומי, הוא יוצג. אם ריעננת, הוא ישתמש במה שהשרת זוכר!
+  const currentVibe = localVibe || post.stats?.myVibe || '❤️';
 
   return (
     <View style={{ width: W, height: CARD_H }}>
       <TouchableOpacity activeOpacity={1} onPress={handleDoubleTap} style={{ flex: 1 }}>
         <View style={{ flex: 1 }}>
-          <Image
-            source={{ uri: post.imageUrl }}
-            style={StyleSheet.absoluteFillObject}
-            resizeMode="contain"
-          />
-          <LinearGradient
-            colors={['rgba(0,0,0,0.7)', 'transparent']}
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 160 }}
-          />
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.98)']}
-            style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 320 }}
-          />
-          {/* Vibe color accent streak */}
+          <Image source={{ uri: post.imageUrl }} style={StyleSheet.absoluteFillObject} resizeMode="contain" />
+          <LinearGradient colors={['rgba(0,0,0,0.7)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 160 }} />
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.98)']} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 320 }} />
+          
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: vibeAccent, opacity: 0.85 }} />
+
+          {postGroup.length > 1 && (
+            <View style={{ flexDirection: 'row', position: 'absolute', top: IS_IOS ? 105 : 85, left: 18, right: 18, zIndex: 100, gap: 4 }}>
+              {postGroup.map((p, i) => (
+                <View key={p.id} style={{ flex: 1, height: 3, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 2, overflow: 'hidden' }}>
+                  {i < currentIndex && <View style={{ height: '100%', width: '100%', backgroundColor: '#fff' }} />}
+                  {i === currentIndex && isActive && (
+                    <Animated.View style={{ height: '100%', backgroundColor: '#fff', width: animProgress.interpolate({ inputRange: [0,1], outputRange: ['0%', '100%']}) }} />
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
 
           <LikeBurst visible={burstVisible} />
 
-          {/* ── "More options" button (only for MY posts) ── */}
           {isMyPost && (
-            <TouchableOpacity
-              onPress={handleMoreOptions}
-              activeOpacity={0.8}
-              style={{
-                position: 'absolute',
-                top: IS_IOS ? 54 : 36,
-                right: 18,
-                width: 36, height: 36,
-                borderRadius: 18,
-                backgroundColor: 'rgba(0,0,0,0.5)',
-                borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
-                alignItems: 'center', justifyContent: 'center',
-                zIndex: 10,
-              }}
-            >
+            <TouchableOpacity onPress={handleMoreOptions} activeOpacity={0.8} style={{ position: 'absolute', top: IS_IOS ? 54 : 36, right: 18, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
               <Ionicons name="ellipsis-horizontal" size={18} color="#FFF" />
             </TouchableOpacity>
           )}
 
-          {/* ── Bottom-left: author + caption ── */}
-          <Animated.View
-            style={{
-              position: 'absolute',
-              bottom: 28, left: 18, right: 80,
-              opacity: entranceO,
-              transform: [{ translateY: entranceY }],
-            }}
-          >
+          <Animated.View style={{ position: 'absolute', bottom: 28, left: 18, right: 80, opacity: entranceO, transform: [{ translateY: entranceY }] }}>
             <VibeChip vibe={post.vibe} />
-
-            {/* Author row */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
               <View style={[fStyles.avatar, { backgroundColor: (Data.brand?.blue || '#0A84FF') + '55' }]}>
                 {post.author?.avatarUrl ? (
@@ -438,79 +457,87 @@ const FeedCard = React.memo(({
                 )}
               </View>
               <Text style={fStyles.username}>{post.author?.username || 'kliquser'}</Text>
-
-              {/* Don't show follow button for own posts */}
               {!isMyPost && (
-                <TouchableOpacity
-                  onPress={handleFollowBtn}
-                  activeOpacity={0.8}
-                  style={[
-                    fStyles.followPill,
-                    isFollowing && { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: 'transparent' },
-                  ]}
-                >
-                  <Text style={fStyles.followText}>
-                    {isFollowing ? '✓ FOLLOWING' : '+ FOLLOW'}
-                  </Text>
+                <TouchableOpacity onPress={handleFollowBtn} activeOpacity={0.8} style={[fStyles.followPill, isFollowing && { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: 'transparent' }]}>
+                  <Text style={fStyles.followText}>{isFollowing ? '✓ FOLLOWING' : '+ FOLLOW'}</Text>
                 </TouchableOpacity>
               )}
-
-              {/* "MY POST" badge for own posts */}
               {isMyPost && (
                 <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(142,45,226,0.35)', borderWidth: 1, borderColor: 'rgba(142,45,226,0.6)' }}>
                   <Text style={{ color: '#C57BFF', fontWeight: '800', fontSize: 10, letterSpacing: 0.5 }}>MY POST</Text>
                 </View>
               )}
             </View>
-
             <Text style={fStyles.caption} numberOfLines={3}>{post.caption}</Text>
           </Animated.View>
 
           {/* ── Right sidebar: actions ── */}
-          <Animated.View
-            style={{
-              position: 'absolute',
-              bottom: 36, right: 16,
-              alignItems: 'center',
-              gap: 14,
-              opacity: entranceO,
-            }}
-          >
-            {/* Like */}
-            <TouchableOpacity onPress={handleLikeBtn} activeOpacity={0.8}>
-              <Animated.View style={{ transform: [{ scale: likeScale }], alignItems: 'center' }}>
-                <View style={[fStyles.actionBtn, userLiked && { backgroundColor: 'rgba(255,45,85,0.35)', borderColor: '#FF2D55' }]}>
-                  <Ionicons
-                    name={userLiked ? 'heart' : 'heart-outline'}
-                    size={22}
-                    color={userLiked ? '#FF2D55' : '#FFF'}
-                  />
-                </View>
-                <Text style={[fStyles.actionCount, userLiked && { color: '#FF2D55' }]}>{likesDisplay}</Text>
-              </Animated.View>
-            </TouchableOpacity>
+          <Animated.View style={{ position: 'absolute', bottom: 36, right: 16, alignItems: 'center', gap: 14, opacity: entranceO, zIndex: 100 }}>
+            
+            {/* אזור הלייק + רשימת האימוג'ים הקופצת */}
+            <View style={{ alignItems: 'center', position: 'relative', zIndex: 999 }}>
+              
+              {/* ⭐️ 3. התיקון הקריטי לאימוג'ים שבורחים: שימוש ב-flexWrap ובגבולות ברורים */}
+              {showVibes && (
+                <Animated.View style={{
+                  position: 'absolute', right: 55, bottom: -5,
+                  backgroundColor: 'rgba(20,20,20,0.98)',
+                  borderRadius: 30, paddingHorizontal: 12, paddingVertical: 8,
+                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+                  flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap',
+                  width: 250, zIndex: 999, // זה מה שמונע מהבועה לברוח מהמסך
+                  elevation: 10, shadowColor: '#000', shadowOffset: { width:0, height:4 }, shadowOpacity: 0.5, shadowRadius: 8
+                }}>
+                  {QUICK_EMOJIS.map(em => (
+                    <TouchableOpacity key={em} onPress={() => handleVibeSelect(em)} activeOpacity={0.6} style={{ marginHorizontal: 6, marginVertical: 4 }}>
+                      <Text style={{ fontSize: 24, lineHeight: 30 }}>{em}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity onPress={() => setShowVibes(false)} activeOpacity={0.6} style={{ padding: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 15, marginLeft: 6 }}>
+                    <Ionicons name="close" size={18} color="#FFF" />
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+
+              <TouchableOpacity onPress={handleLikeBtn} onLongPress={() => setShowVibes(true)} activeOpacity={0.8}>
+                <Animated.View style={{ transform: [{ scale: likeScale }], alignItems: 'center' }}>
+                  <View style={[fStyles.actionBtn, effectivelyLiked && { backgroundColor: 'rgba(255,45,85,0.35)', borderColor: '#FF2D55' }]}>
+                    {effectivelyLiked && currentVibe !== '❤️' ? (
+                      <Text style={{ fontSize: 20 }}>{currentVibe}</Text>
+                    ) : (
+                      <Ionicons name={effectivelyLiked ? 'heart' : 'heart-outline'} size={22} color={effectivelyLiked ? '#FF2D55' : '#FFF'} />
+                    )}
+                  </View>
+                </Animated.View>
+              </TouchableOpacity>
+
+              {/* ⭐️ 4. התיקון לרשימה הריקה: מעביר את ה-ID האמיתי כדי שהמודל ידע מה למשוך מהשרת */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 4 }}>
+                <TouchableOpacity
+                  onPress={() => onOpenLikes(post.postId || post.post_id || post.id)} 
+                  activeOpacity={0.7}
+                  style={{ paddingVertical: 4, paddingHorizontal: 8, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, borderWidth: 1, borderColor: effectivelyLiked ? 'rgba(255,45,85,0.5)' : 'rgba(255,255,255,0.18)' }}
+                >
+                  <Text style={[fStyles.actionCount, effectivelyLiked && { color: '#FF2D55' }]}>{likesDisplay}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowVibes(!showVibes)} activeOpacity={0.6} style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
+                  <Ionicons name="add" size={14} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+            </View>
 
             {/* Comment */}
             <TouchableOpacity onPress={() => onComment(post)} activeOpacity={0.8}>
               <View style={{ alignItems: 'center' }}>
-                <View style={fStyles.actionBtn}>
-                  <Ionicons name="chatbubble-outline" size={20} color="#FFF" />
-                </View>
+                <View style={fStyles.actionBtn}><Ionicons name="chatbubble-outline" size={20} color="#FFF" /></View>
                 <Text style={fStyles.actionCount}>{commentsCount}</Text>
               </View>
             </TouchableOpacity>
 
             {/* Share */}
-            <TouchableOpacity
-              onPress={() => onShare(post)}
-              onPressIn={sharePressIn}
-              onPressOut={sharePressOut}
-              activeOpacity={0.8}
-            >
+            <TouchableOpacity onPress={() => onShare(post)} onPressIn={sharePressIn} onPressOut={sharePressOut} activeOpacity={0.8}>
               <Animated.View style={{ alignItems: 'center', transform: [{ scale: shareScale }] }}>
-                <View style={fStyles.actionBtn}>
-                  <Ionicons name="arrow-redo-outline" size={20} color="#FFF" />
-                </View>
+                <View style={fStyles.actionBtn}><Ionicons name="arrow-redo-outline" size={20} color="#FFF" /></View>
                 <Text style={fStyles.actionCount}>SHARE</Text>
               </Animated.View>
             </TouchableOpacity>
@@ -518,20 +545,16 @@ const FeedCard = React.memo(({
             {/* Duet */}
             <TouchableOpacity onPress={handleDuet} activeOpacity={0.8}>
               <View style={{ alignItems: 'center' }}>
-                <View style={[fStyles.actionBtn, { backgroundColor: 'rgba(142,45,226,0.3)', borderColor: '#8E2DE2' }]}>
-                  <Ionicons name="git-branch-outline" size={18} color="#FFF" />
-                </View>
+                <View style={[fStyles.actionBtn, { backgroundColor: 'rgba(142,45,226,0.3)', borderColor: '#8E2DE2' }]}><Ionicons name="git-branch-outline" size={18} color="#FFF" /></View>
                 <Text style={fStyles.actionCount}>DUET</Text>
               </View>
             </TouchableOpacity>
 
-            {/* Delete shortcut (only for MY posts, quick red trash) */}
+            {/* Delete */}
             {isMyPost && (
               <TouchableOpacity onPress={handleDeleteConfirm} activeOpacity={0.8}>
                 <View style={{ alignItems: 'center' }}>
-                  <View style={[fStyles.actionBtn, { backgroundColor: 'rgba(255,59,48,0.25)', borderColor: '#FF3B30' }]}>
-                    <Ionicons name="trash-outline" size={18} color="#FF3B30" />
-                  </View>
+                  <View style={[fStyles.actionBtn, { backgroundColor: 'rgba(255,59,48,0.25)', borderColor: '#FF3B30' }]}><Ionicons name="trash-outline" size={18} color="#FF3B30" /></View>
                   <Text style={[fStyles.actionCount, { color: '#FF3B30' }]}>DELETE</Text>
                 </View>
               </TouchableOpacity>
@@ -540,14 +563,7 @@ const FeedCard = React.memo(({
         </View>
       </TouchableOpacity>
 
-      {/* Options menu (slide-up sheet) */}
-      <OptionsMenu
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        onDelete={handleDeleteConfirm}
-        onEdit={() => onEditRequest(post)}
-        accentColor={vibeAccent}
-      />
+      <OptionsMenu visible={menuVisible} onClose={() => setMenuVisible(false)} onDelete={handleDeleteConfirm} onEdit={() => onEditRequest(post)} accentColor={vibeAccent} />
     </View>
   );
 });
@@ -649,28 +665,28 @@ export default function FeedScreen() {
     refreshAllData,
     setPulseCreateOpen,
     userSettings,
-    deletePulse, // ← מוחק pulse מהשרת ומה-state
-    deletePost,  // ← fallback למחיקת post רגיל
-    editPost,    // ← עריכת post
+    deletePulse,
+    deletePost,  
+    editPost,    
   } = useAppStore();
 
   const isDark = userSettings?.darkMode !== false;
   const [activeVibe, setActiveVibe]         = useState('All');
   const [likedPosts, setLikedPosts]         = useState(new Set());
+  const [localVibes, setLocalVibes]         = useState({}); 
   const [followedUsers, setFollowedUsers]   = useState(new Set());
-  const [activeCommentPost, setActiveCommentPost]     = useState(null); // { pulseId, postId }
+  const [activeCommentPost, setActiveCommentPost] = useState(null); 
+  const [likesPostId, setLikesPostId]       = useState(null);
   const [refreshing, setRefreshing]         = useState(false);
   const [activeIndex, setActiveIndex]       = useState(0);
   const [feedPosts, setFeedPosts]           = useState(PLACEHOLDER_POSTS);
   const flatRef = useRef(null);
 
-  // ─── Header fade-in ──────────────────────────────────────────────────────────
   const headerOpacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(headerOpacity, { toValue: 1, duration: 600, useNativeDriver: true }).start();
   }, []);
 
-  // ─── Load real feed posts ────────────────────────────────────────────────────
   useEffect(() => {
     const loadFeed = async () => {
       try {
@@ -690,22 +706,56 @@ export default function FeedScreen() {
   }, [pulses, feedPosts]);
 
   const displayPosts = useMemo(() => {
-    if (activeVibe === 'All') return mergedPosts;
-    return mergedPosts.filter((p) => p.vibe === activeVibe);
+    let postsToShow = activeVibe === 'All' ? mergedPosts : mergedPosts.filter((p) => p.vibe === activeVibe);
+
+    const userGroupsMap = postsToShow.reduce((acc, post) => {
+      const uid = post.author?.id || post.user?.id;
+      if (!uid) return acc;
+      if (!acc[uid]) acc[uid] = [];
+      acc[uid].push(post);
+      return acc;
+    }, {});
+
+    const groupedArray = Object.values(userGroupsMap)
+      .map(arr => arr.sort((a,b) => new Date(a.createdAt || a.timestamp) - new Date(b.createdAt || b.timestamp))) 
+      .sort((groupA, groupB) => {
+         const latestA = groupA[groupA.length - 1];
+         const latestB = groupB[groupB.length - 1];
+         return new Date(latestB.createdAt || latestB.timestamp) - new Date(latestA.createdAt || latestA.timestamp);
+      });
+
+    return groupedArray;
   }, [mergedPosts, activeVibe]);
 
-  // ─── Handlers ────────────────────────────────────────────────────────────────
+  const handleLike = useCallback(async (id, vibe = '❤️', isUnlike = false) => {
+    trackEvent('pulse_liked', { pulseId: id, userId: user?.id, vibe }); 
 
-  const handleLike = useCallback(async (id) => {
-    setLikedPosts((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-    try {
-      await fetchAPI('/pulse/like', { method: 'POST', body: { postId: id } });
-    } catch (_) {}
-  }, []);
+    if (isUnlike) {
+      setLikedPosts((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setLocalVibes((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      try {
+        await fetchAPI(`/pulse/${id}/unlike`, { method: 'POST' });
+      } catch (_) {}
+    } else {
+      setLikedPosts((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+      setLocalVibes((prev) => ({ ...prev, [id]: vibe }));
+      try {
+        await fetchAPI(`/pulse/${id}/like`, { method: 'POST', body: { vibe } });
+      } catch (_) {}
+    }
+  }, [user?.id]);
 
   const handleFollow = useCallback(async (userId) => {
     if (!userId) return;
@@ -721,8 +771,6 @@ export default function FeedScreen() {
 
   const handleComment = useCallback((post) => {
     haptic('light');
-    // התגובות נשמרות על ה-PULSE עצמו — השרת מזהה pulseId אוטומטית.
-    // שולחים תמיד את pulse.id כדי שהתגובה תישמר על הפולס ותחזור ברענון.
     setActiveCommentPost({ pulseId: post.id, postId: post.id });
   }, []);
 
@@ -737,16 +785,12 @@ export default function FeedScreen() {
     } catch (_) {}
   }, []);
 
-  // ── DELETE POST — removes from server + local state immediately ──────────────
   const handleDeletePost = useCallback(async (postId) => {
     const sid = String(postId);
 
-    // Optimistically remove from local UI immediately
     setFeedPosts((prev) => prev.filter((p) => String(p.id) !== sid));
 
     try {
-      // deletePulse = הפונקציה הנכונה לפוסטים מסוג Pulse (Feed/Stories)
-      // deletePost  = fallback לפוסטים רגילים (Community Feed)
       if (deletePulse) {
         await deletePulse(sid);
       } else if (deletePost) {
@@ -756,7 +800,6 @@ export default function FeedScreen() {
       }
       haptic('success');
     } catch (err) {
-      // Rollback: reload feed from server
       const data = await fetchAPI('/pulse/feed?limit=30').catch(() => null);
       if (Array.isArray(data) && data.length > 0) setFeedPosts(data);
       haptic('error');
@@ -764,7 +807,6 @@ export default function FeedScreen() {
     }
   }, [deletePulse, deletePost]);
 
-  // ── EDIT POST — prompt for new caption, persist to server ───────────────────
   const handleEditRequest = useCallback((post) => {
     Alert.prompt(
       'Edit Caption',
@@ -775,7 +817,6 @@ export default function FeedScreen() {
 
         const trimmed = newCaption.trim();
 
-        // Optimistic update
         setFeedPosts((prev) =>
           prev.map((p) => String(p.id) === String(post.id) ? { ...p, caption: trimmed } : p)
         );
@@ -788,7 +829,6 @@ export default function FeedScreen() {
           }
           haptic('success');
         } catch (err) {
-          // Rollback
           setFeedPosts((prev) =>
             prev.map((p) => String(p.id) === String(post.id) ? { ...p, caption: post.caption } : p)
           );
@@ -802,9 +842,10 @@ export default function FeedScreen() {
   }, [editPost]);
 
   const handleDrop = useCallback(() => {
+    trackEvent('create_pulse_clicked', { userId: user?.id, screen: 'Feed' }); 
     haptic('heavy');
     setPulseCreateOpen?.(true);
-  }, [setPulseCreateOpen]);
+  }, [setPulseCreateOpen, user?.id]); 
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -841,9 +882,9 @@ export default function FeedScreen() {
         </TouchableOpacity>
 
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={fStyles.headerTitle}>FEED</Text>
+          <Text style={fStyles.headerTitle}>PULSE</Text>
           <Text style={fStyles.headerSub}>
-            {`${displayPosts.length} ${activeVibe === 'All' ? 'posts' : (VIBE_TABS.find((t) => t.id === activeVibe)?.label || '') + ' posts'}`}
+            {`${displayPosts.length} ${activeVibe === 'All' ? 'pulses' : (VIBE_TABS.find((t) => t.id === activeVibe)?.label || '') + ' pulses'}`}
           </Text>
         </View>
 
@@ -864,20 +905,22 @@ export default function FeedScreen() {
         <FlatList
           ref={flatRef}
           data={displayPosts}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={(item) => String(item[0].id)}
           renderItem={({ item, index }) => (
             <FeedCard
-              post={item}
+              postGroup={item}
               isActive={index === activeIndex}
               currentUser={user}
-              userLiked={likedPosts.has(item.id)}
-              isFollowing={followedUsers.has(item.author?.id || item.author?.username)}
+              userLiked={likedPosts.has(item[0].id)}
+              localVibe={localVibes[item[0].id]} // העברת האימוג'י השמור מקומית
+              isFollowing={followedUsers.has(item[0].author?.id || item[0].author?.username)}
               onLike={handleLike}
               onComment={handleComment}
               onShare={handleShare}
               onFollow={handleFollow}
               onDelete={handleDeletePost}
               onEditRequest={handleEditRequest}
+              onOpenLikes={setLikesPostId} 
             />
           )}
           pagingEnabled={false}
@@ -918,6 +961,14 @@ export default function FeedScreen() {
         apiPostId={activeCommentPost?.postId}
         visible={!!activeCommentPost}
         onClose={() => setActiveCommentPost(null)}
+      />
+
+      {/* ── Likes Modal ── */}
+      <PostLikesModal
+        postId={likesPostId}
+        visible={!!likesPostId}
+        onClose={() => setLikesPostId(null)}
+        isDark={isDark}
       />
     </View>
   );

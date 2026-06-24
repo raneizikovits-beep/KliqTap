@@ -44,8 +44,10 @@ import {
   Platform,
   InteractionManager,
   Linking,
+  useWindowDimensions,
 } from 'react-native';
 
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Data from '../constants/data';
 import { routeTrend, getTrendMeta } from '../utils/trendRouter';
 import { useAppStore } from '../store/useAppStore';
@@ -54,19 +56,8 @@ import { StoryModal } from '../components/modals/PeekModals';
 import KliqPulseBoard from '../components/KliqPulseBoard';
 import { fetchAPI } from '../store/api';
 import { useNavigation } from '@react-navigation/native';
-
+import { trackEvent } from '../utils/analytics'; // 
 // ─── Optional native modules (safe fallbacks if not installed) ────────────────
-let LinearGradient;
-try {
-  // eslint-disable-next-line global-require
-  LinearGradient = require('expo-linear-gradient').LinearGradient;
-} catch (_) {
-  LinearGradient = ({ colors = ['#000', '#000'], style, children, ...rest }) => (
-    <View style={[{ backgroundColor: colors[0] }, style]} {...rest}>
-      {children}
-    </View>
-  );
-}
 
 let Haptics;
 try {
@@ -82,9 +73,12 @@ try {
   };
 }
 
-const { width } = Dimensions.get('window');
+// ⭐️ FIX: `width` is now read via useWindowDimensions() inside the component
+// so snapToInterval re-calculates on rotation and web window resize.
+// Dimensions is kept above for any other potential usage in the file.
 const IS_IOS = Platform.OS === 'ios';
-
+// מחקנו לחלוטין את ה-Dimensions.get מפה כדי למנוע את הקריסה של Hermes!
+// ═══════════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════════
 //  CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -500,44 +494,55 @@ const CommunityVibeTracker = React.memo(({ isDark, motivation }) => {
   );
 });
 
-// ── 🔴 Live Zone Component with Pulse Animation ─────────────────────────────
-const LiveZoneItem = React.memo(({ zone, onPress, isDark }) => {
-  const avatarUri = zone.img || zone.image_url || null;
+// ⭐️ V2 PREMIUM LIVE ZONE ITEM (Instagram Stories Style) ⭐️
+const LiveZoneItem = React.memo(({ zone, isDark, onPress }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  // אנימציית נשימה לטבעת — מראה שזה "בשידור חי"
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.08, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
+        Animated.timing(pulseAnim, { toValue: 1,    duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ])
     );
     loop.start();
     return () => loop.stop();
   }, [pulseAnim]);
 
-  const viewers = zone.viewers || 0; // ⭐️ שואב נתון אמיתי בלבד מהשרת!
+  const avatarUrl = zone.image_url || zone.imageUrl || zone.img || 'https://via.placeholder.com/150';
+  const viewers   = zone.viewers || zone.viewer_count || 0;
 
   return (
-    <TouchableOpacity style={localStyles.liveItem} activeOpacity={0.85} onPress={() => onPress(zone)}>
-      <View style={localStyles.liveAvatarContainer}>
-        <Animated.View style={[localStyles.livePulseRing, { transform: [{ scale: pulseAnim }] }]} />
-        {avatarUri ? (
-          <Image source={{ uri: avatarUri }} style={localStyles.liveAvatar} />
-        ) : (
-          <View style={[localStyles.liveAvatar, localStyles.liveAvatarFallback]}>
-            <Ionicons name="radio" size={26} color="#FF2D55" />
+    <TouchableOpacity activeOpacity={0.8} onPress={() => onPress(zone)} style={localStyles.liveZoneContainer}>
+      <Animated.View style={[localStyles.liveOuterRing, { transform: [{ scale: pulseAnim }] }]}>
+        <LinearGradient
+          colors={['#FF0050', '#8A2387', '#E94057', '#F27121']}
+          style={localStyles.liveGradientRing}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <View style={[localStyles.liveInnerRing, { borderColor: isDark ? '#000' : '#F9FAFB' }]}>
+            <Image source={{ uri: avatarUrl }} style={localStyles.liveAvatar} />
           </View>
-        )}
-        {/* FIX #8: uses liveBadge (absolute-positioned zone badge) */}
-        <View style={localStyles.liveBadge}>
-          <Text style={localStyles.liveBadgeText}>LIVE</Text>
-        </View>
+        </LinearGradient>
+      </Animated.View>
+
+      {/* LIVE badge — positioned over the avatar ring */}
+      <View style={[localStyles.liveBadgeContainer, { borderColor: isDark ? '#000' : '#F9FAFB' }]}>
+        <Text style={localStyles.liveBadgeText}>LIVE</Text>
       </View>
-      <Text style={[localStyles.liveName, { color: isDark ? '#EEE' : '#333' }]} numberOfLines={1}>{zone.name}</Text>
-      <Text style={localStyles.liveViewersText}>
-        <Ionicons name="eye" size={10} color="#888" /> {viewers}
+
+      {/* Zone name */}
+      <Text style={[localStyles.liveZoneName, { color: isDark ? '#fff' : '#111' }]} numberOfLines={1}>
+        {zone.name || zone.title || 'Live Zone'}
       </Text>
+
+      {/* Viewers pill */}
+      <View style={localStyles.viewersPill}>
+        <Ionicons name="eye" size={10} color="#fff" />
+        <Text style={localStyles.viewersText}>{viewers}</Text>
+      </View>
     </TouchableOpacity>
   );
 });
@@ -680,7 +685,7 @@ const ForYouCard = React.memo(({ item, isDark }) => {
 /* ─── Challenge of the Day — clicking opens Pulse Create ─────────────────── */
 const ChallengeCard = React.memo(({ challenge, onPress, isDark }) => {
   const { scale, onPressIn, onPressOut } = usePressScale(0.97);
-const title = challenge?.title || "🏆 SULONG KLIQ 🔥";
+const title = challenge?.title || "🔥KUMBATI KLIQ 🏆";
   const sub = challenge?.description || "Join this week's community challenge!";
   const participants = formatCount(challenge?._count?.entries || challenge?.participantCount || 0);
   const endsIn = (() => {
@@ -1230,6 +1235,8 @@ const KliqPicksSection = React.memo(({ isDark, onDropPulse }) => {
 
 export default function HomeScreen({ setSecondSheet }) {
   const navigation = useNavigation(); // 👈 הנה מנוע הניווט שלנו!
+  // ⭐️ FIX: live width (updates on rotation / web window resize)
+  const { width } = useWindowDimensions();
   const {
     user,
     pulses = [],
@@ -1250,30 +1257,44 @@ export default function HomeScreen({ setSecondSheet }) {
     fetchWeeklyChallenge,
   } = useAppStore();
 
-  // 👇 הקוד החדש - מדומה, דינמי ומרגיש אמיתי לגמרי
+  // ── Community Vibe: real data from /kliq-king/vibe ───────────────────────
+  // The previous implementation was a sinusoidal simulation (Math.sin/cos of
+  // the current date/hour) — explicitly labelled "מדומה" (fake). It showed a
+  // stable-looking number that had nothing to do with actual community activity.
+  // This version fetches the real value and falls back to a time estimate only
+  // when the network is unavailable.
+  const [communityVibeScore, setCommunityVibeScore] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchAPI('/kliq-king/vibe');
+        // API may return { vibe: N }, { score: N }, { percentage: N }, or just N
+        const score =
+          typeof data === 'number'
+            ? data
+            : (data?.vibe ?? data?.score ?? data?.percentage ?? null);
+        if (!cancelled && typeof score === 'number' && score >= 0 && score <= 100) {
+          setCommunityVibeScore(Math.round(score));
+        }
+      } catch {
+        // Network failure — fall through to offline estimate
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Offline estimate — used only until the real API responds.
   const dynamicCommunityVibe = useMemo(() => {
-    const now = new Date();
-    const day = now.getDate();
-    const hour = now.getHours();
-
-    // קובעים בסיס יציב של 82%
-    const baseVibe = 82;
-    
-    // Math.sin ו-Math.cos מייצרים תנודתיות עדינה דמוית-גל:
-    // תנודה שמשתנה מיום ליום (בין מינוס 10 לפלוס 10)
-    const dailyFluctuation = Math.sin(day) * 10;
-    
-    // תנודה שמשתנה משעה לשעה (בין מינוס 6 לפלוס 6)
-    const hourlyFluctuation = Math.cos(hour) * 6;
-
-    // מחברים הכל יחד למספר שלם
-    let simulatedVibe = Math.floor(baseVibe + dailyFluctuation + hourlyFluctuation);
-
-    // חיתוך סופי כדי לוודא שזה לעולם לא מתחת ל-65% (מת) ולעולם לא 100% (מזויף)
-    return Math.min(98, Math.max(65, simulatedVibe));
-  }, [trendingTopics]);
+    if (communityVibeScore !== null) return communityVibeScore; // ← real data
+    // Graceful fallback: stable time-of-day estimate
+    const hour = new Date().getHours();
+    return Math.min(97, Math.max(65, Math.floor(82 + Math.cos(hour) * 6)));
+  }, [communityVibeScore, trendingTopics]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [refreshing, setRefreshing] = useState(false);
+  const [realLiveZones, setRealLiveZones] = useState([]);
   const [activeVibeFilter, setActiveVibeFilter] = useState('All');
   const [viewingStory, setViewingStory] = useState(null);
   const [realityData, setRealityData] = useState({ weather: null, news: null, loading: true });
@@ -1302,12 +1323,24 @@ export default function HomeScreen({ setSecondSheet }) {
     }
   }, [fadeAnim]);
 
+  const loadLiveZones = useCallback(async () => {
+    try {
+      const data = await fetchAPI('/live/zones');
+      if (Array.isArray(data)) {
+        setRealLiveZones(data);
+      }
+    } catch (error) {
+      console.warn('[HomeScreen] Error fetching live zones:', error);
+    }
+  }, []);
+
   const fetchedRef = useRef(false);
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
     fetchExploreData?.();
     fetchWeeklyChallenge?.();
+    loadLiveZones();
     const t = setTimeout(() => fetchRealityContext(), 300);
     return () => clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1328,14 +1361,14 @@ export default function HomeScreen({ setSecondSheet }) {
     haptic('select');
     try {
       if (refreshAllData) await refreshAllData();
-      await Promise.all([fetchExploreData?.(), fetchRealityContext()]);
+      await Promise.all([fetchExploreData?.(), fetchRealityContext(), loadLiveZones()]);
       haptic('success');
     } catch (err) {
       console.warn('[HomeScreen] onRefresh error:', err);
     } finally {
       setRefreshing(false);
     }
-  }, [refreshAllData, fetchExploreData, fetchRealityContext]);
+  }, [refreshAllData, fetchExploreData, fetchRealityContext, loadLiveZones]);
 
   // ─── Derived data ──────────────────────────────────────────────────────────
   const myPulse = useMemo(
@@ -1415,11 +1448,13 @@ export default function HomeScreen({ setSecondSheet }) {
   }, [setSecondSheet, isDark, withDebounce]);
 
   const handleRoulette = useCallback(() => {
+    trackEvent('roulette_clicked', { userId: user?.id }); // 👈 הדיווח לפיירבייס
+
     withDebounce(() => {
       haptic('heavy');
       findStreamRouletteMatch?.();
     });
-  }, [findStreamRouletteMatch, withDebounce]);
+  }, [findStreamRouletteMatch, withDebounce, user?.id]); // 👈 הוספנו את user?.id למערך כדי למנוע שגיאות
 
   // Streak & Challenge → open Pulse Create (real, existing sheet)
   const handleStreakPress = useCallback(() => {
@@ -1549,15 +1584,25 @@ export default function HomeScreen({ setSecondSheet }) {
                 onPress={() => handlePulsePress(myPulse, true)}
                 isDark={isDark}
               />
-              {filteredOtherPulses.map((pulse) => (
-                <PulseCircle
-                  key={pulse.id}
-                  user={pulse.author}
-                  activePulse={pulse}
-                  isMe={false}
-                  onPress={() => handlePulsePress(pulse, false)}
-                  isDark={isDark}
-                />
+              {/* ⭐️ סינון קסם: מציג רק עיגול אחד לכל משתמש! */}
+              {Object.values(
+              filteredOtherPulses.reduce((acc, pulse) => {
+              const uid = pulse.author?.id || pulse.user?.id;
+              // שומרים רק את הפלאס האחרון של כל משתמש (כדי שיופיע כעיגול אחד)
+              if (!acc[uid] || new Date(pulse.createdAt) > new Date(acc[uid].createdAt)) {
+              acc[uid] = pulse;
+              }
+              return acc;
+              }, {})
+              ).map((pulse) => (
+              <PulseCircle
+               key={pulse.id}
+               user={pulse.author}
+               activePulse={pulse}
+               isMe={false}
+               onPress={() => handlePulsePress(pulse, false)}
+               isDark={isDark}
+               />
               ))}
               {filteredOtherPulses.length === 0 && activeVibeFilter !== 'All' && (
                 <View style={{ justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 10 }}>
@@ -1807,7 +1852,7 @@ export default function HomeScreen({ setSecondSheet }) {
                 </LinearGradient>
                 <View style={{ marginLeft: 16, flex: 1 }}>
                   <Text style={{ color: isDark ? '#FFF' : '#1A0A00', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 }}>COMMUNITY PULSE</Text>
-                  <Text style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)', fontSize: 12, marginTop: 3, fontWeight: '600' }}>Food · Gym · Music — swipe to explore</Text>
+                  <Text style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)', fontSize: 12, marginTop: 3, fontWeight: '600' }}>Food · Gym · Music - swipe to explore</Text>
                 </View>
                 <View style={{ backgroundColor: '#FF6B35', padding: 8, borderRadius: 16 }}>
                   <Ionicons name="arrow-forward" size={18} color="#FFF" />
@@ -1880,41 +1925,33 @@ export default function HomeScreen({ setSecondSheet }) {
             </ScrollView>
           </View>
 
-          {/* ── 17. LIVE NOW — shows real liveZones from store; loading skeleton while empty ── */}
+          {/* ── 17. LIVE NOW — fetched from API ── */}
           <View style={localStyles.section}>
             <View style={localStyles.rowBetween}>
               <Text style={[localStyles.sectionLabel, { color: isDark ? '#555' : '#BBB' }]}>LIVE NOW 🔴</Text>
-              {liveZones.length > 0 && (
+              {realLiveZones.length > 0 && (
                 <View style={localStyles.liveHeaderBadge}>
                   <View style={localStyles.liveDot} />
-                  <Text style={localStyles.liveHeaderBadgeText}>{liveZones.length} LIVE</Text>
+                  <Text style={localStyles.liveHeaderBadgeText}>{realLiveZones.length} LIVE</Text>
                 </View>
               )}
             </View>
-            {liveZones.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={localStyles.liveScroll}>
-                {liveZones.map((zone) => (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={localStyles.liveScroll}>
+              {realLiveZones.length > 0 ? (
+                realLiveZones.map((zone) => (
                   <LiveZoneItem
                     key={zone.id}
                     zone={zone}
-                    onPress={handleLivePress}
                     isDark={isDark}
+                    onPress={handleLivePress}
                   />
-                ))}
-              </ScrollView>
-            ) : (
-              // * ── 18. Loading skeleton while waiting for real data from store
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={localStyles.liveScroll}>
-                {[0, 1, 2, 3].map((i) => (
-                  <View key={i} style={localStyles.liveItem}>
-                    <View style={[localStyles.liveAvatarContainer]}>
-                      <View style={[localStyles.liveAvatar, { backgroundColor: isDark ? '#1C1C1E' : '#EEE', borderColor: 'transparent' }]} />
-                    </View>
-                    <Skeleton width={50} height={10} radius={5} isDark={isDark} style={{ marginTop: 10 }} />
-                  </View>
-                ))}
-              </ScrollView>
-            )}
+                ))
+              ) : (
+                <View style={{ paddingVertical: 20, paddingHorizontal: 10 }}>
+                  <Text style={{ color: isDark ? '#666' : '#aaa', fontStyle: 'italic', fontSize: 13 }}>No one is live right now.</Text>
+                </View>
+              )}
+            </ScrollView>
           </View>
 
           {/* ── 19. TOP CREATORS (visual only) ─────────────────────────────── */}
@@ -2126,33 +2163,24 @@ const localStyles = StyleSheet.create({
   streakSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 3 },
 
   featuredScroll: { paddingHorizontal: 20, gap: 15 },
-  featuredCard: { width: width * 0.65, height: 145 },
+  featuredCard: { width: Data.width * 0.65, height: 145 },
   featuredImg: { width: '100%', height: '100%' },
   featuredOverlay: { flex: 1, padding: 15, justifyContent: 'flex-end', borderRadius: 12 },
   featuredTitle: { color: '#FFF', fontSize: 16, fontWeight: '900', letterSpacing: 1 },
 
-  liveScroll: { paddingHorizontal: 20, gap: 20 },
-  liveItem: { alignItems: 'center', width: 66 },
-  liveAvatar: { width: 66, height: 66, borderRadius: 33, borderWidth: 2.5, borderColor: '#FF2D55' },
-  liveAvatarFallback: { backgroundColor: '#1a0008', justifyContent: 'center', alignItems: 'center' },
-  liveName: { fontSize: 11, marginTop: 10, fontWeight: '700' },
-  liveAvatarContainer: { position: 'relative', width: 66, height: 66, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
-  livePulseRing: { position: 'absolute', width: 74, height: 74, borderRadius: 37, borderWidth: 2, borderColor: 'rgba(255, 45, 85, 0.4)' },
+  liveScroll: { paddingHorizontal: 20, gap: 16 },
 
-  // ─── FIX #8: liveBadge = zone item badge (absolute-positioned over avatar)
-  liveBadge: {
-    position: 'absolute',
-    bottom: -6,
-    backgroundColor: '#FF2D55',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: '#000',
-    alignItems: 'center',
-  },
-  liveBadgeText: { color: '#FFF', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
-  liveViewersText: { fontSize: 10, color: '#888', marginTop: 2, fontWeight: '600' },
+  // ─── LIVE ZONES STYLES (V2 — Instagram Stories Style) ──────────────────────
+  liveZoneContainer: { alignItems: 'center', marginRight: 18, width: 72 },
+  liveOuterRing: { width: 72, height: 72, borderRadius: 36, shadowColor: '#E94057', shadowOpacity: 0.4, shadowRadius: 8, elevation: 5 },
+  liveGradientRing: { width: 72, height: 72, borderRadius: 36, padding: 3, justifyContent: 'center', alignItems: 'center' },
+  liveInnerRing: { width: 66, height: 66, borderRadius: 33, borderWidth: 3, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  liveAvatar: { width: 60, height: 60, borderRadius: 30, resizeMode: 'cover' },
+  liveBadgeContainer: { position: 'absolute', bottom: 32, backgroundColor: '#FF0050', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 2 },
+  liveBadgeText: { color: '#fff', fontSize: 8, fontWeight: '900', letterSpacing: 0.5 },
+  liveZoneName: { fontSize: 11, fontWeight: '700', marginTop: 10, textAlign: 'center' },
+  viewersPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10, marginTop: 4, gap: 3 },
+  viewersText: { color: '#fff', fontSize: 9, fontWeight: '800' },
 
   // ─── FIX #8: liveHeaderBadge = section header "LIVE" pill (NOT absolute)
   liveHeaderBadge: {
@@ -2240,7 +2268,7 @@ const localStyles = StyleSheet.create({
   },
   trendActionText: { color: '#FFF', fontWeight: '900', fontSize: 10, letterSpacing: 0.8 },
 
-  forYouCard: { width: width * 0.7, height: 200, marginRight: 15 },
+  forYouCard: { width: Data.width * 0.7, height: 200, marginRight: 15 },
   forYouOverlay: { flex: 1, padding: 16, justifyContent: 'flex-end', borderRadius: 18 },
   forYouBadge: {
     flexDirection: 'row',

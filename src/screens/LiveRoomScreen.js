@@ -120,8 +120,30 @@ const CoHostCircle = ({ index }) => (
  * A single chat message row.
  * Wrapped in React.memo — only re-renders if the message object changes.
  */
-const ChatMessage = React.memo(({ item }) => (
-  <View style={styles.chatMessageRow}>
+// ─── Trust & Safety: Report Helper ─────────────────────────────────────────
+async function _submitSecurityReport(reportedId, reason) {
+  if (!reportedId) return false;
+  try {
+    const token = useAppStore.getState?.()?.token;
+    if (!token) return false;
+    const resp = await fetch('https://api.kliqtap.com/security/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ reportedId: String(reportedId), reason }),
+    });
+    return resp.ok;
+  } catch { return false; }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ChatMessage = React.memo(({ item, onReport }) => (
+  <TouchableOpacity
+    style={styles.chatMessageRow}
+    onLongPress={() => onReport && onReport(item.userId, item.user)}
+    delayLongPress={400}
+    activeOpacity={0.9}
+    accessibilityLabel={`Message from ${item.user}. Long press to report.`}
+  >
     <Image
       source={{ uri: item.avatar }}
       style={styles.chatAvatar}
@@ -131,7 +153,7 @@ const ChatMessage = React.memo(({ item }) => (
       <Text style={styles.chatUser}>{item.user}</Text>
       <Text style={styles.chatText}>{item.text}</Text>
     </View>
-  </View>
+  </TouchableOpacity>
 ));
 
 /**
@@ -365,9 +387,24 @@ export default function LiveRoomScreen({ roomId, roomName, zone, onClose }) {
   // FlatList virtualises the list, rendering only visible rows.
   const keyExtractor = useCallback((item) => item.id, []);
 
+  // Fires the report dialog when a user long-presses on a chat message.
+  const handleReportInRoom = useCallback((userId, userName) => {
+    if (!userId) return;
+    Alert.alert(
+      `Report ${userName || 'User'}`,
+      'Why are you reporting this person?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: '😤 Harassment / threats',   onPress: async () => { const ok = await _submitSecurityReport(userId, 'harassment'); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you. Our team will review this.' : 'Could not submit. Try again.'); } },
+        { text: '🚫 Spam or advertising',    onPress: async () => { const ok = await _submitSecurityReport(userId, 'spam'); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you.' : 'Could not submit. Try again.'); } },
+        { text: '🔞 Inappropriate content',  onPress: async () => { const ok = await _submitSecurityReport(userId, 'inappropriate_content'); Alert.alert(ok ? '✅ Reported' : 'Error', ok ? 'Thank you.' : 'Could not submit. Try again.'); } },
+      ],
+    );
+  }, []);
+
   const renderMessage = useCallback(
-    ({ item }) => <ChatMessage item={item} />,
-    []
+    ({ item }) => <ChatMessage item={item} onReport={handleReportInRoom} />,
+    [handleReportInRoom]
   );
 
   // Auto-scroll to bottom when a new message arrives

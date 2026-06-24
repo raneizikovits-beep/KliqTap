@@ -1,5 +1,18 @@
 // client/src/components/GroupDetailsSheet.js
-// ⭐️ V23.0 - WEB FIX: Working Delete Button on Chrome + Full Logic Sync ⭐️
+// ⭐️ V23.1 — DRY isMember + real member avatars + memoized empty state ⭐️
+//
+// [V23.1 CHANGES — Engineering Audit Fixes]:
+//   [FIX DRY]    isMember now uses isUserMemberOfGroup imported from GroupCard.
+//                GroupCard's comment explicitly noted this should be shared here;
+//                GroupDetailsSheet was re-implementing the same logic with a weaker
+//                guard (no Array.isArray check, no String() wrapping on userId).
+//   [FIX DEMO]   Mini-avatars in hero header now render real group member avatars
+//                instead of imageFor('Member1/2/3') placeholder callouts.
+//   [FIX PERF]   renderEmptyComponent converted to useCallback — plain functions
+//                passed to FlatList's ListEmptyComponent cause unnecessary unmount/
+//                remount of the empty view on every parent render.
+//
+// [V23.0 — WEB FIX]: Working Delete Button on Chrome + Full Logic Sync
 
 import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
 import { 
@@ -13,8 +26,25 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { styles as globalStyles } from '../constants/styles';
 import { brand, imageFor } from '../constants/data';
 import PostCard from './PostCard';
+import { isUserMemberOfGroup } from './GroupCard'; // [FIX DRY] shared helper; avoids duplicate logic
 import { useAppStore } from '../store/useAppStore'; 
 import { GroupSettingsModal } from './modals/GroupSettingsModal'; 
+import { trackEvent } from '../utils/analytics'; // 👈 הייבוא החדש שלנו
+
+
+// ─── Security Report Helper (same as PostCard) ───────────────────────────────
+async function _submitSecurityReport(reportedId, reason, token) {
+    if (!reportedId || !token) return false;
+    try {
+        const resp = await fetch('https://api.kliqtap.com/security/report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ reportedId: String(reportedId), reason }),
+        });
+        return resp.ok;
+    } catch { return false; }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const GroupDetailsSheet = ({ group, setThirdSheet, openVoiceCall, openVideoCall, onClose, onOpenAvatar }) => {
     
@@ -33,6 +63,9 @@ const GroupDetailsSheet = ({ group, setThirdSheet, openVoiceCall, openVideoCall,
     const openChat = useAppStore(state => state.openChat);
     const setProfilePeekUser = useAppStore(state => state.setProfilePeekUser);
     const startDirectChat = useAppStore(state => state.startDirectChat);
+    const token = useAppStore(state => state.token);
+
+    const [isReporting, setIsReporting] = useState(false);
 
     const [currentTab, setCurrentTab] = useState('feed'); 
     const [newPostText, setNewPostText] = useState('');
@@ -49,10 +82,12 @@ const GroupDetailsSheet = ({ group, setThirdSheet, openVoiceCall, openVideoCall,
     const currentUserId = String(user?.id || '');
     const groupOwnerId = String(group?.ownerId || '');
     
-    const isMember = useMemo(() => {
-        if (!group) return false;
-        return group.isMember || (group.members && group.members.some(m => String(m.userId) === currentUserId));
-    }, [group, currentUserId]);
+    // [FIX DRY] Previously duplicated inline logic from GroupCard with a weaker guard.
+    // isUserMemberOfGroup uses Array.isArray() and String() on both sides consistently.
+    const isMember = useMemo(
+        () => isUserMemberOfGroup(group, currentUserId),
+        [group, currentUserId]
+    );
 
     const isAdmin = useMemo(() => {
         if (!group) return false;
@@ -101,8 +136,9 @@ const GroupDetailsSheet = ({ group, setThirdSheet, openVoiceCall, openVideoCall,
         }
         setLocalPosting(true);
         try {
+            trackEvent('group_post_created', { groupId: groupId }); // 👈 הדיווח על פוסט בקהילה
             await createPost(newPostText.trim(), groupId);
-            setNewPostText(''); 
+            setNewPostText('');
             if (flatListRef.current) {
                 flatListRef.current.scrollToOffset({ offset: 0, animated: true });
             }
@@ -117,15 +153,22 @@ const GroupDetailsSheet = ({ group, setThirdSheet, openVoiceCall, openVideoCall,
         try {
             if (isMember) {
                 if (Platform.OS === 'web') {
-                    if (window.confirm("Leave Community? Are you sure?")) leaveGroup(groupId);
+                    if (window.confirm("Leave Community? Are you sure?")) {
+                        trackEvent('group_left', { groupId: groupId }); // 👈 מעקב נטישת קהילה
+                        leaveGroup(groupId);
+                    }
                 } else {
                     Alert.alert("Leave Community", "Are you sure?", [
                         { text: "Cancel", style: "cancel" },
-                        { text: "Leave", style: 'destructive', onPress: () => leaveGroup(groupId) }
+                        { text: "Leave", style: 'destructive', onPress: () => {
+                            trackEvent('group_left', { groupId: groupId }); // 👈 מעקב נטישת קהילה
+                            leaveGroup(groupId);
+                        }}
                     ]);
                 }
             } else {
                 await joinGroup(groupId);
+                trackEvent('group_joined', { groupId: groupId }); // 👈 מעקב הצטרפות לקהילה
                 Alert.alert("Joined!", "Welcome to the community.");
             }
         } catch (e) { Alert.alert("Error", "Action failed."); }
@@ -164,6 +207,53 @@ const GroupDetailsSheet = ({ group, setThirdSheet, openVoiceCall, openVideoCall,
         else Alert.alert("Join Chat", "You must join to access the chat.");
     }, [isMember, groupId, openChat]);
 
+    // ── Report group / group owner ────────────────────────────────────────
+    // [FIX] Reordered below — _doGroupReport must be declared BEFORE
+    // handleReportGroup so the latter's dependency array can safely reference
+    // it (referencing a `const` before its declaration in the same scope
+    // throws "Cannot access before initialization").
+    const _doGroupReport = useCallback(async (reason) => {
+        if (isReporting) return;
+        // Report the group owner / admin as the responsible party
+        const reportedId = groupOwnerId || group?.createdBy;
+        if (!reportedId) {
+            Alert.alert('Error', 'Could not identify the community owner.');
+            return;
+        }
+        setIsReporting(true);
+        const ok = await _submitSecurityReport(reportedId, reason, token);
+        setIsReporting(false);
+        if (ok) {
+            Alert.alert('✅ Reported', 'Thank you. Our moderation team will review this community.');
+        } else {
+            Alert.alert('Error', 'Could not submit report. Please try again.');
+        }
+    }, [groupOwnerId, group, token, isReporting]);
+
+    // [FIX] Was `useCallback(() => {...}, [])` — an empty dependency array
+    // permanently froze this closure to whichever _doGroupReport existed at
+    // the FIRST render, even though _doGroupReport itself correctly recomputes
+    // whenever groupOwnerId/group/token/isReporting change (e.g. if `group`
+    // arrives as a minimal stub and gets enriched by a later fetch while this
+    // sheet stays open, or token changes after a re-auth). Tapping a report
+    // reason would then call a stale _doGroupReport carrying stale owner/token
+    // data. Now correctly depends on _doGroupReport, so it always calls the
+    // current, correctly-bound version.
+    const handleReportGroup = useCallback(() => {
+        Alert.alert(
+            'Report Community',
+            'Why are you reporting this community?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                { text: '🚫 Spam or scam',           onPress: () => _doGroupReport('spam') },
+                { text: '🔞 Inappropriate content',   onPress: () => _doGroupReport('inappropriate_content') },
+                { text: '💊 Illegal activity',        onPress: () => _doGroupReport('illegal_activity') },
+                { text: '😤 Harassment or hate',      onPress: () => _doGroupReport('harassment') },
+            ],
+        );
+    }, [_doGroupReport]);
+    // ─────────────────────────────────────────────────────────────────────
+
     const listData = useMemo(() => {
         if (currentTab === 'feed') return currentGroupPosts;
         if (currentTab === 'members') return group?.members || [];
@@ -195,6 +285,20 @@ const GroupDetailsSheet = ({ group, setThirdSheet, openVoiceCall, openVideoCall,
                                         <Ionicons name="trash-outline" size={22} color="#fff" />
                                     </TouchableOpacity>
                                 )}
+                                {/* Report button — visible to non-admin logged-in users */}
+                                {!isAdmin && !!currentUserId && (
+                                    <TouchableOpacity
+                                        onPress={handleReportGroup}
+                                        disabled={isReporting}
+                                        style={[localStyles.glassBtn, { backgroundColor: 'rgba(255,59,48,0.35)' }]}
+                                        accessibilityLabel="Report this community"
+                                    >
+                                        {isReporting
+                                            ? <ActivityIndicator size="small" color="#fff" />
+                                            : <Ionicons name="flag-outline" size={22} color="#fff" />
+                                        }
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         </View>
 
@@ -205,9 +309,20 @@ const GroupDetailsSheet = ({ group, setThirdSheet, openVoiceCall, openVideoCall,
                             
                             <View style={localStyles.statsRow}>
                                 <View style={localStyles.avatarsRow}>
-                                    {[1,2,3].map((num, idx) => (
-                                        <Image key={`av-${num}`} source={{uri: imageFor(`Member${num}`)}} style={[localStyles.miniAvatar, { left: -10 * idx, zIndex: 3 - idx }]} />
-                                    ))}
+                                    {/* [FIX DEMO] Show real member avatars instead of imageFor('Member1/2/3') placeholders */}
+                                {(group?.members || []).slice(0, 3).map((m, idx) => {
+                                    const memberUser = m.user || m;
+                                    const avatarUri  = memberUser.avatarUrl || memberUser.profilePic || memberUser.avatar
+                                        || imageFor(memberUser.name || memberUser.username || 'User');
+                                    const memberId   = String(m.userId || m.id || idx);
+                                    return (
+                                        <Image
+                                            key={memberId}
+                                            source={{ uri: avatarUri }}
+                                            style={[localStyles.miniAvatar, { left: -10 * idx, zIndex: 3 - idx }]}
+                                        />
+                                    );
+                                })}
                                 </View>
                                 <Text style={localStyles.membersCount}>{group?.membersCount || group?.memberCount || 1} Members</Text>
                                 <TouchableOpacity style={[localStyles.joinBtn, isMember && localStyles.joinedBtn]} onPress={handleMembership}>
@@ -316,7 +431,9 @@ const GroupDetailsSheet = ({ group, setThirdSheet, openVoiceCall, openVideoCall,
         return null;
     }, [currentTab, user, handleOpenProfilePeek, setThirdSheet, isMember, handleOpenGroupChat, isDark, currentUserId, startDirectChat, onClose]);
 
-    const renderEmptyComponent = () => {
+    // [FIX PERF] Plain function reference changes on every render, causing FlatList to
+    // unmount and remount the empty view unnecessarily. useCallback stabilises it.
+    const renderEmptyComponent = useCallback(() => {
         if (currentTab === 'feed') {
             if (isGroupPostsLoading) return <ActivityIndicator size="large" color={brand.blue} style={localStyles.marginTop20} />;
             return (
@@ -329,7 +446,7 @@ const GroupDetailsSheet = ({ group, setThirdSheet, openVoiceCall, openVideoCall,
         }
         if (currentTab === 'members') return <Text style={[localStyles.loadingText, { color: isDark ? '#888' : '#888' }]}>Member list is empty...</Text>;
         return null;
-    };
+    }, [currentTab, isGroupPostsLoading, isDark]);
 
     if (!group) return null;
 

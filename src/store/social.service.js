@@ -1,10 +1,9 @@
 // client/src/store/social.service.js
-// ⭐️ V3.0 PRODUCTION: Centralized media helper + URLSearchParams + safer query building ⭐️
+// ⭐️ V3.1 PRODUCTION: Added Share tracking + Centralized media helper + URLSearchParams ⭐️
 //
-// שינויים מ-V2.3:
-//   • appendMediaToFormData — exported כדי ש-pulse.service.js יוכל לצרוך אותו (אין drift)
-//   • fetchPostsFeed משתמש ב-URLSearchParams במקום קונקטנציה ידנית
-//   • שיפור error handling קטן ב-search
+// שינויים מ-V3.0:
+//   • fetchPostShares — משיכת רשימת המשתפים מהשרת
+//   • trackPostShare — רישום שיתוף במסד הנתונים
 
 import { Platform } from 'react-native';
 import { fetchAPI } from './api';
@@ -16,17 +15,6 @@ import { describeFileFromUri } from './mimeUtils';
 
 /**
  * Appends a media file to FormData in a platform-aware way.
- *
- * On Web (Chrome / Safari / Firefox):
- *   fetch(uri) → blob() → formData.append(field, blob, filename)
- *
- * On Native (iOS / Android):
- *   formData.append(field, { uri, name, type }) — handled by RN polyfill
- *
- * @param {FormData} formData
- * @param {string}   fieldName
- * @param {string}   uri
- * @param {string}   fallback - fallback filename if cannot be derived
  */
 export async function appendMediaToFormData(formData, fieldName, uri, fallback = 'upload.jpg') {
     const { filename, type } = describeFileFromUri(uri, fallback);
@@ -55,16 +43,29 @@ export async function fetchPostsFeed(limit = 20, cursor = null) {
     return fetchAPI(`/posts?${params.toString()}`);
 }
 
-export async function likePost(postId) {
-    return fetchAPI(`/posts/${postId}/like`, { method: 'POST' });
+export async function likePost(postId, vibe = null) {
+    const options = { method: 'POST' };
+    if (vibe) {
+        options.body = JSON.stringify({ vibe });
+    }
+    return fetchAPI(`/posts/${postId}/like`, options);
 }
 
 export async function unlikePost(postId) {
     return fetchAPI(`/posts/${postId}/unlike`, { method: 'POST' });
 }
 
+// ⭐️ הפונקציה החדשה למשיכת רשימת השיתופים ⭐️
+export async function fetchPostShares(postId) {
+    return fetchAPI(`/posts/${postId}/shares`);
+}
+
+// ⭐️ הפונקציה החדשה לרישום שיתוף ⭐️
+export async function trackPostShare(postId) {
+    return fetchAPI(`/posts/${postId}/share`, { method: 'POST' });
+}
+
 export async function createPost(text, groupId = null, imageUri = null) {
-    // Fast path: no media → JSON (smaller payload, faster server-side parsing)
     if (!imageUri) {
         return fetchAPI('/posts', {
             method: 'POST',
@@ -158,11 +159,16 @@ export async function searchGlobal(query) {
 // ====================================================
 
 export async function addComment(postId, text, imageUri = null) {
+    if (!imageUri) {
+        return fetchAPI(`/posts/${postId}/comment`, {
+            method: 'POST',
+            body: JSON.stringify({ text: text || '' }),
+        });
+    }
+
     const formData = new FormData();
     if (text) formData.append('text', text);
-    if (imageUri) {
-        await appendMediaToFormData(formData, 'image', imageUri, 'comment.jpg');
-    }
+    await appendMediaToFormData(formData, 'image', imageUri, 'comment.jpg');
     return fetchAPI(`/posts/${postId}/comment`, { method: 'POST', body: formData });
 }
 
