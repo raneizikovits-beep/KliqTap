@@ -200,8 +200,82 @@ export const EVENTS = Object.freeze({
     AWARD_POINTS:       'award_points',
     STREAK_MILESTONE:   'streak_milestone',
 
+    // Landing Page / Web (tracked via web app shell or injected script)
+    LANDING_PAGE_VIEW:  'landing_page_view',
+    LANDING_CTA_WEB:    'landing_cta_web_app',
+    LANDING_CTA_APK:    'landing_cta_apk',
+    LANDING_CTA_IOS:    'landing_cta_ios',
+    LANDING_SECTION:    'landing_section_view',
+    LANDING_STORE_TAP:  'landing_store_tap',
+
     // Errors / Diagnostics
     SCREEN_ERROR:       'screen_error',
+});
+
+// ─────────────────────────────────────────────────────────────
+// Market Research Data — Single source of truth for all
+// statistics used in UI, onboarding, and marketing copy.
+//
+// Sources:
+//   WHO  — World Health Organization Global Loneliness Report, 2023
+//   CDC  — Centers for Disease Control and Prevention, 2023
+//   OECD — Well-Being Statistics Database, 2022
+//   Forbes — Loneliness Economy Growth Forecast, 2024
+// ─────────────────────────────────────────────────────────────
+
+export const MARKET_STATS = Object.freeze({
+    /**
+     * 33% of adults globally report chronic loneliness.
+     * Source: WHO, 2023
+     */
+    CHRONIC_LONELINESS_GLOBAL_PCT:      33,
+
+    /**
+     * 49% of young adults in the U.S. experience significant social isolation.
+     * Source: CDC, 2023
+     */
+    YOUTH_ISOLATION_PCT:                49,
+
+    /**
+     * Global loneliness increased 15% since the COVID-19 pandemic.
+     * Source: OECD, 2022
+     */
+    LONELINESS_INCREASE_POST_COVID_PCT: 15,
+
+    /**
+     * 13% of EU citizens feel lonely most of the time.
+     * Source: EU Commission, 2022
+     */
+    EU_LONELINESS_PCT:                  13,
+
+    /**
+     * Global Loneliness Economy estimated at $7.2 billion by 2027.
+     * Source: Forbes, 2024
+     */
+    LONELINESS_ECONOMY_USD_BILLION:     7.2,
+
+    /**
+     * Mental wellness & digital community sectors growing at 15–20% CAGR.
+     * Source: Forbes / Industry, 2024
+     */
+    WELLNESS_MARKET_CAGR_PCT_MIN:       15,
+    WELLNESS_MARKET_CAGR_PCT_MAX:       20,
+
+    /**
+     * $250B in personal data sold annually without user consent.
+     * Source: Industry estimates
+     */
+    DATA_SOLD_ANNUALLY_USD_BILLION:    250,
+
+    /**
+     * Average daily Gen Z screen time lost to toxic feeds (hours).
+     */
+    GEN_Z_TOXIC_SCREEN_TIME_HR:        2.4,
+
+    /**
+     * User control (%) over platform rules on existing social networks.
+     */
+    USER_CONTROL_ON_PLATFORMS_PCT:       0,
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -311,4 +385,28 @@ export const setUserProperties = async (properties) => {
     } catch (err) {
         if (__DEV__) console.warn('[Analytics] ⚠️ setUserProperties failed:', err);
     }
+};
+
+// ─────────────────────────────────────────────────────────────
+// Landing Page Tracking
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Convenience wrapper for landing page / web shell events.
+ * Automatically tags every event with { source: 'landing_page' }.
+ *
+ * Usage (in the web app or injected landing-page script):
+ *   trackLandingEvent(EVENTS.LANDING_CTA_WEB, { button: 'hero' });
+ *   trackLandingEvent(EVENTS.LANDING_SECTION, { section: 'value_architecture' });
+ *
+ * Sections to track:
+ *   'hero' | 'problem' | 'stats_band' | 'value_architecture' |
+ *   'solution' | 'features' | 'comparison' | 'gtm' |
+ *   'business_model' | 'founder' | 'cta'
+ *
+ * @param {string} eventName  — Use a constant from EVENTS
+ * @param {object} [params]   — Additional params merged with { source }
+ */
+export const trackLandingEvent = (eventName, params = {}) => {
+    return trackEvent(eventName, { source: 'landing_page', ...params });
 };
