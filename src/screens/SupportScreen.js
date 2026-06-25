@@ -42,10 +42,10 @@ const SOUND_TRACKS = [
 ];
 
 const SOUND_FILES = {
-  rain:   require('../assets/sounds/rain.mp3'),
-  forest: require('../assets/sounds/forest.mp3'),
-  waves:  require('../assets/sounds/waves.mp3'),
-  fire:   require('../assets/sounds/fire.mp3'),
+  rain:   require('../assets/audio/rain.mp3'),
+  forest: require('../assets/audio/forest.mp3'),
+  waves:  require('../assets/audio/waves.mp3'),
+  fire:   require('../assets/audio/fire.mp3'),
 };
 
 const AFFIRMATIONS = [
